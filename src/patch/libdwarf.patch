@@ -1,0 +1,75 @@
+diff -rub libdwarf/configure.in libdwarf_new/configure.in
+--- libdwarf/configure.in	2009-06-23 00:23:23.000000000 +0200
++++ libdwarf_new/configure.in	2009-07-07 13:41:01.000000000 +0200
+@@ -8,6 +8,7 @@
+ AC_PROG_INSTALL
+ AC_CHECK_TOOL(RANLIB, ranlib, :)
+ AC_CHECK_TOOL(AR, ar)
++AC_CHECK_PROGS(BUILD_CC, gcc)
+ 
+ dnl AC_ARFLAGS
+ 
+diff -rub libdwarf/Makefile.in libdwarf_new/Makefile.in
+--- libdwarf/Makefile.in	2009-06-23 00:23:23.000000000 +0200
++++ libdwarf_new/Makefile.in	2009-07-07 14:15:45.000000000 +0200
+@@ -47,19 +47,22 @@
+ exec_prefix =	@exec_prefix@
+ bindir =	$(exec_prefix)/bin
+ libdir =	$(exec_prefix)/lib
++includedir =	$(exec_prefix)/include
+ 
+ INSTALL =	@INSTALL@
+ INSTALL_PROGRAM = @INSTALL_PROGRAM@
+ INSTALL_DATA =	@INSTALL_DATA@
+ SHELL =		/bin/sh
+ CC =		@CC@
++BUILD_CC =	@BUILD_CC@
+ AR =		@AR@
+ #ARFLAGS =	@ARFLAGS@
+ RM =		rm
+ RANLIB =	@RANLIB@
+ DEFS =		@DEFS@
+ LIBS =		@LIBS@
+-INCLUDES =	-I. -I$(srcdir)
++CPPFLAGS =	@CPPFLAGS@
++INCLUDES =	-I. -I$(srcdir) $(CPPFLAGS)
+ CFLAGS =	@CFLAGS@ $(INCLUDES)
+ # For more checking add -DWANT_LIBBDWARF_MALLOC_CHECK=1 to CFLAGS
+ LDFLAGS =	@LDFLAGS@
+@@ -133,9 +136,9 @@
+ none:
+ 	echo "do nothing"
+ common.o:  $(srcdir)/common.c $(srcdir)/common.h
+-	$(CC) $(CFLAGS) -c $(srcdir)/common.c
++	$(BUILD_CC) $(CFLAGS) -c $(srcdir)/common.c
+ gennames: $(srcdir)/gennames.c $(srcdir)/dwarf.h  common.o
+-	$(CC) $(CFLAGS) $(srcdir)/gennames.c common.o $(LDFLAGS) -o gennames
++	$(BUILD_CC) $(CFLAGS) $(srcdir)/gennames.c common.o $(LDFLAGS) -o gennames
+ dwarf_names.c dwarf_names.h: gennames $(srcdir)/dwarf.h
+ 	rm -f dwarf_names.h dwarf_names.c
+ 	./gennames  @dwarf_namestable@  -i $(srcdir) -o .
+@@ -194,6 +197,8 @@
+ 	$(PSTOPDF) mips_extensions.ps  mips_extensions.pdf
+ 
+ clean:
++	rm -f dwarf_names.h dwarf_names.c dwarf_names_enum.h dwarf_names_new.h
++	rm -f gennames
+ 	rm -f *.o libdwarf.a 
+ 	rm -f libdwarf.so
+ 	rm -f libdwarf2.1.ps
+@@ -204,9 +209,14 @@
+ 	rm -f libdwarf2p.1.ps
+ 
+ distclean:	clean
+-	rm -f config.status config.log config.cache config.h
++	rm -f config.status config.log config.cache config.h Makefile
++	rm -rf autom4te.cache
+ 
+ shar:
+ 		@echo "shar not set up yet"
+ dist:
+ 		@echo "dist not set up yet"
++
++install: libdwarf.a
++	$(INSTALL_DATA) libdwarf.a $(libdir)
++	$(INSTALL_DATA) dwarf.h libdwarf.h $(includedir)
