@@ -1,5 +1,4 @@
-/* PycaWM
- * pycawm.py
+/* idadwarf: IDA plugin for retrieving DWARF debugging symbols
  * Copyright (c) 2009 Vincent Rasneur <vrasneur@free.fr>
 
  * This program is free software; you can redistribute it and/or modify
