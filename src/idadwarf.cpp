@@ -17,7 +17,7 @@
 
 #include <map>
 #include <sstream>
-
+#include <iostream>
 // IDA headers
 #include <ida.hpp>
 #include <loader.hpp> // plugin stuff
@@ -37,6 +37,11 @@ using namespace std;
 
 #define PLUGIN_NAME "ELF/DWARF plugin"
 
+// enable format string warnings
+extern int msg(char const *format, ...) GCC_PRINTF(1, 2);
+extern void warning(char const *message, ...) GCC_PRINTF(1, 2);
+extern void error(char const *format, ...) GCC_PRINTF(1, 2);
+
 #define MSG(fmt, ...) msg("[" PLUGIN_NAME "] " fmt, ## __VA_ARGS__)
 
 #ifndef NDEBUG
@@ -49,8 +54,8 @@ using namespace std;
 
 #define ERROR(fmt, ...) error("[" PLUGIN_NAME " at %s (%s:%d)] " fmt, __FUNCTION__, __FILE__, __LINE__, ## __VA_ARGS__)
 
-#define CHECK_DWERR2(cond, err) if(cond) { throw DieException(err, __FILE__, __LINE__); }
-#define CHECK_DWERR(cond, err) CHECK_DWERR2((cond) != DW_DLV_OK, err)
+#define CHECK_DWERR2(cond, err, fmt, ...) if(cond) { throw DieException(__FILE__, __LINE__, err, fmt, ## __VA_ARGS__); }
+#define CHECK_DWERR(cond, err, fmt, ...) CHECK_DWERR2((cond) != DW_DLV_OK, err, fmt, ## __VA_ARGS__)
 
 // DIE caching struct
 
@@ -88,11 +93,18 @@ int get_small_encoding_value(Dwarf_Attribute attrib, Dwarf_Signed *val, Dwarf_Er
 class DieException : public exception
 {
 public:
-  DieException(Dwarf_Error err, char const *file, int const line)
+  DieException(char const *file, int const line, Dwarf_Error err, char const *fmt, ...)
   {
     ostringstream oss;
+    va_list ap;
+    char buffer[MAXSTR];
+
+    va_start(ap, fmt);
+    (void)qvsnprintf(buffer, sizeof(buffer), fmt, ap);
+    va_end(ap);
+
     oss << '(' << file << ':' << line << ") " <<
-      dwarf_errmsg(err) << " (" << dwarf_errno(err) << ')';
+      buffer << " (" << dwarf_errno(err) << ": " << dwarf_errmsg(err) << ')';
     m_msg = oss.str();
   }
 
@@ -124,7 +136,8 @@ public:
     Dwarf_Die die = NULL;
     Dwarf_Error err = NULL;
 
-    CHECK_DWERR(dwarf_offdie(dbg, offset, &die, &err), err);
+    CHECK_DWERR(dwarf_offdie(dbg, offset, &die, &err), err,
+                "cannot retrieve DIE from offset 0x%" DW_PR_DUx, offset);
 
     init(dbg, die, dealloc_die);
   }
@@ -173,7 +186,8 @@ public:
       Dwarf_Error err = NULL;
 
       // name may be NULL
-      CHECK_DWERR2(dwarf_diename(m_die, &m_name, &err) == DW_DLV_ERROR, err);
+      CHECK_DWERR2(dwarf_diename(m_die, &m_name, &err) == DW_DLV_ERROR, err,
+                   "cannot get DIE name");
     }
 
     return m_name;
@@ -189,7 +203,8 @@ public:
       Dwarf_Error err = NULL;
 
       // atribute may be NULL
-      CHECK_DWERR2(dwarf_attr(m_die, attr, &attrib, &err) == DW_DLV_ERROR, err);
+      CHECK_DWERR2(dwarf_attr(m_die, attr, &attrib, &err) == DW_DLV_ERROR, err,
+                   "cannot get DIE attribute %d", attr);
       m_attrs[attr] = attrib;
     }
     else
@@ -207,7 +222,8 @@ public:
     Dwarf_Error err = NULL;
 
     attrib = get_attr(attr);
-    CHECK_DWERR(get_small_encoding_value(attrib, &val, &err), err);
+    CHECK_DWERR(get_small_encoding_value(attrib, &val, &err), err,
+                "cannot get value of a DIE attribute %d", attr);
 
     return val;
   }
@@ -217,7 +233,8 @@ public:
     Dwarf_Unsigned bytesize = 0;
     Dwarf_Error err = NULL;
 
-    CHECK_DWERR(dwarf_bytesize(m_die, &bytesize, &err), err);
+    CHECK_DWERR(dwarf_bytesize(m_die, &bytesize, &err), err,
+                "cannot get DIE byte size");
 
     return bytesize;
   }
@@ -228,7 +245,8 @@ public:
     {
       Dwarf_Error err = NULL;
 
-      CHECK_DWERR(dwarf_dieoffset(m_die, &m_offset, &err), err);
+      CHECK_DWERR(dwarf_dieoffset(m_die, &m_offset, &err), err,
+                  "cannot get DIE offset");
       m_offset_used = true;
     }
 
@@ -240,9 +258,45 @@ public:
     Dwarf_Off cu_offset = 0;
     Dwarf_Error err = NULL;
 
-    CHECK_DWERR(dwarf_die_CU_offset_range(m_die, &cu_offset, cu_length, &err), err);
+    CHECK_DWERR(dwarf_die_CU_offset_range(m_die, &cu_offset, cu_length, &err), err,
+                "cannot get DIE CU offset range");
 
     return cu_offset;
+  }
+
+  Dwarf_Half get_tag(void)
+  {
+    Dwarf_Half tag = 0;
+    Dwarf_Error err = NULL;
+
+    CHECK_DWERR(dwarf_tag(m_die, &tag, &err), err,
+                "cannot get DIE tag");
+
+    return tag;
+  }
+
+  Dwarf_Die get_child(void)
+  {
+    Dwarf_Die child_die = NULL;
+    Dwarf_Error err = NULL;
+
+    // there may be no child
+    CHECK_DWERR2(dwarf_child(m_die, &child_die, &err) == DW_DLV_ERROR, err,
+                 "error when asking for a DIE child");
+
+    return child_die;
+  }
+
+  Dwarf_Die get_sibling(void)
+  {
+    Dwarf_Die sibling_die = NULL;
+    Dwarf_Error err = NULL;
+
+    // there may be no sibling
+    CHECK_DWERR2(dwarf_siblingof(m_dbg, m_die, &sibling_die, &err) == DW_DLV_ERROR, err,
+                 "error when asking for a DIE sibling");
+
+    return sibling_die;
   }
 
   // caching stuff
@@ -422,7 +476,7 @@ static flags_t get_enum_size(Dwarf_Unsigned const size)
     flag = owrdflag();
     break;
   default:
-    msg("wrong size for enum (got %u bytes), assuming 4 bytes...\n", size);
+    MSG("wrong size for enum (got %" DW_PR_DUu " bytes), assuming 4 bytes...\n", size);
     flag = dwrdflag();
     break;
   }
@@ -434,27 +488,24 @@ void process_enum(DieHolder &enumeration_die)
 {
   char *name = NULL;
   Dwarf_Unsigned byte_size = 0;
-  Dwarf_Error err = NULL;
   Dwarf_Die child_die = NULL;
-  Dwarf_Die cur_die = NULL;
   enum_t enum_type = 0;
   ulong ordinal = 0;
-  int ret = 0;
 
   name = enumeration_die.get_name();
   // bytesize is mandatory
   byte_size = enumeration_die.get_bytesize();
 
+  // TODO: check if enum has already been defined (hard?)
   enum_type = add_enum(BADADDR, name, get_enum_size(byte_size));
-  DEBUG("added an enum name='%s' bytesize=%u\n", name, byte_size);
+  DEBUG("added an enum name='%s' bytesize=%" DW_PR_DUu "\n", name, byte_size);
 
-  ret = dwarf_child(enumeration_die.get_die(), &child_die, &err);
-  while(ret == DW_DLV_OK)
+  child_die = enumeration_die.get_child();
+  while(child_die != NULL)
   {
     DieHolder child_holder(enumeration_die.get_dbg(), child_die);
-    Dwarf_Half tag = 0;
+    Dwarf_Half tag = child_holder.get_tag();
 
-    CHECK_DWERR(dwarf_tag(child_die, &tag, &err), err);
     if(tag == DW_TAG_enumerator)
     {
       char *child_name = NULL;
@@ -462,30 +513,17 @@ void process_enum(DieHolder &enumeration_die)
 
       child_name = child_holder.get_name();
       value = child_holder.get_attr_small_val(DW_AT_const_value);
-      add_const(enum_type, child_name, (uval_t)value);
-      DEBUG("added an enumerator name='%s' value=%d\n", child_name, value);
+      add_const(enum_type, child_name, static_cast<uval_t>(value));
+      DEBUG("added an enumerator name='%s' value=%" DW_PR_DSd "\n", child_name, value);
 
       child_holder.cache_useless();
     }
 
-    cur_die = child_die;
-    child_die = NULL;
-    ret = dwarf_siblingof(enumeration_die.get_dbg(), cur_die, &child_die, &err);
+    child_die = child_holder.get_sibling();
   }
-
-  if(ret == DW_DLV_NO_ENTRY)
-  {
-    // no more enumerator, that's ok
-    ret = DW_DLV_OK;
-  }
-
-  CHECK_DWERR(ret, err);
 
   ordinal = get_enum_type_ordinal(enum_type);
   enumeration_die.cache_type(ordinal);
-
-  die_cache cache;
-  enumeration_die.get_cache(&cache);
 }
 
 void process_base_type(DieHolder &type_die)
@@ -523,7 +561,7 @@ void process_base_type(DieHolder &type_die)
       ida_type[0] |= BTMT_BOOL4;
       break;
     default:
-      msg("base type: unknown boolean size %u, assuming size is model specific\n", byte_size);
+      msg("base type: unknown boolean size %" DW_PR_DUu ", assuming size is model specific\n", byte_size);
       ida_type[0] |= BTMT_DEFBOOL;
       break;
     }
@@ -548,7 +586,7 @@ void process_base_type(DieHolder &type_die)
       ida_type[0] |= BTMT_LNGDBL;
       break;
     default:
-      msg("unknown float byte size %u\n", byte_size);
+      msg("unknown float byte size %" DW_PR_DUu "\n", byte_size);
       break;
     }
     break;
@@ -578,7 +616,7 @@ void process_base_type(DieHolder &type_die)
       ida_type[0] |= BT_INT128;
       break;
     default:
-      msg("unknown int byte sizz %u, assuming natural int\n");
+      msg("unknown byte size %" DW_PR_DUu ", assuming natural int\n", byte_size);
       ida_type[0] |= BT_INT;
       break;
     }
@@ -594,11 +632,11 @@ void process_base_type(DieHolder &type_die)
     ida_type[0] |= BT_INT8 | BTMT_CHAR;
     if(byte_size != 1)
     {
-      msg("got a char with bte size % u (!= 1), assuming 1 anyway...\n", byte_size);
+      msg("got a char with bte size %" DW_PR_DUu " (!= 1), assuming 1 anyway...\n", byte_size);
     }
     break;
   default:
-    msg("unknown base type encoding %u\n", encoding);
+    msg("unknown base type encoding %" DW_PR_DSd "\n", encoding);
     break;
   }
 
@@ -632,12 +670,14 @@ void process_typedef(DieHolder &typedef_die)
 
   name = typedef_die.get_name();
   type_attrib = typedef_die.get_attr(DW_AT_type);
-  CHECK_DWERR(dwarf_whatform(type_attrib, &form, &err), err);
+  CHECK_DWERR(dwarf_whatform(type_attrib, &form, &err), err,
+              "cannot get form for the type attribute of a typedef DIE");
 
   switch(form)
   {
   case DW_FORM_ref_addr:
-    CHECK_DWERR(dwarf_global_formref(type_attrib, &offset, &err), err);
+    CHECK_DWERR(dwarf_global_formref(type_attrib, &offset, &err), err,
+                "cannot get global reference address for a typedef DIE type");
     break;
   case DW_FORM_ref1:
   case DW_FORM_ref2:
@@ -648,7 +688,8 @@ void process_typedef(DieHolder &typedef_die)
     Dwarf_Off cu_offset = 0;
     Dwarf_Off cu_length = 0;
 
-    CHECK_DWERR(dwarf_formref(type_attrib, &offset, &err), err);
+    CHECK_DWERR(dwarf_formref(type_attrib, &offset, &err), err,
+                "cannot get reference address for a typedef DIE type");
     cu_offset = typedef_die.get_CU_offset_range(&cu_length);
     offset += cu_offset;
   }
@@ -707,10 +748,8 @@ void visit_die(DieHolder &die)
 {
   if(!die.in_cache())
   {
-    Dwarf_Error err = NULL;
-    Dwarf_Half tag = 0;
+    Dwarf_Half tag = die.get_tag();
 
-    dwarf_tag(die.get_die(), &tag, &err);
     // TODO: no switch
     switch(tag)
     {
@@ -731,16 +770,16 @@ void visit_die(DieHolder &die)
 
 void do_dies_traversal(Dwarf_Debug dbg, Dwarf_Die root_die)
 {
-  Dwarf_Error err = NULL;
   qvector<Dwarf_Die> queue;
 
   queue.push_back(root_die);
 
   while(!queue.empty())
   {
-    DieHolder holder(dbg, queue.back());
     Dwarf_Die other_die = NULL;
-    int ret = DW_DLV_ERROR;
+    DieHolder holder(dbg, queue.back());
+
+    queue.pop_back();
 
     try
     {
@@ -748,21 +787,33 @@ void do_dies_traversal(Dwarf_Debug dbg, Dwarf_Die root_die)
     }
     catch(DieException const &exc)
     {
-      MSG("cannot process current die (skipping): %s\n", exc.what());
+      MSG("cannot process current DIE (skipping): %s\n", exc.what());
     }
 
-    queue.pop_back();
-
-    ret = dwarf_siblingof(dbg, holder.get_die(), &other_die, &err);
-    if(ret == DW_DLV_OK)
+    try
     {
-      queue.push_back(other_die);
+      other_die = holder.get_sibling();
+      if(other_die != NULL)
+      {
+        queue.push_back(other_die);
+      }
+    }
+    catch(DieException const &exc)
+    {
+      MSG("cannot retrieve current DIE sibling (skipping): %s\n", exc.what());
     }
 
-    ret = dwarf_child(holder.get_die(), &other_die, &err);
-    if(ret == DW_DLV_OK)
+    try
     {
-      queue.push_back(other_die);
+      other_die = holder.get_child();
+      if(other_die != NULL)
+      {
+        queue.push_back(other_die);
+      }
+    }
+    catch(DieException const &exc)
+    {
+      MSG("cannot retrieve current DIE child (skipping): %s\n", exc.what());
     }
   }
 }
