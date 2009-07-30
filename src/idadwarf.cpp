@@ -18,6 +18,7 @@
 #include <map>
 #include <sstream>
 #include <iostream>
+
 // IDA headers
 #include <ida.hpp>
 #include <loader.hpp> // plugin stuff
@@ -34,6 +35,7 @@
 #include "gcc_defs.h"
 
 using namespace std;
+using namespace __gnu_cxx;
 
 #define PLUGIN_NAME "ELF/DWARF plugin"
 
@@ -386,6 +388,131 @@ private:
 // init static member vars so the linker will be happy
 netnode *DieHolder::m_dies_node = NULL;
 
+struct less_strcmp
+{
+  bool operator()(char const *s1, char const *s2) const
+  {
+    return strcmp(s1, s2) < 0;
+  }
+};
+
+class EnumCmp : public const_visitor_t
+{
+public:
+  EnumCmp(enum_t enum_id)
+  {
+    m_enum_id = enum_id;
+    
+    if(m_enum_id != BADNODE)
+    {
+      for_all_consts(m_enum_id, *this);
+    }
+  }
+
+  EnumCmp(char const *enum_name)
+  {
+    if(enum_name != NULL)
+    {
+      m_enum_id = get_enum(enum_name);
+
+      if(m_enum_id != BADNODE)
+      {
+        for_all_consts(m_enum_id, *this);
+      }
+    }
+  }
+
+  virtual ~EnumCmp() throw()
+  {
+    while(!m_consts.empty())
+    {
+      map<char const *, uval_t>::iterator iter = m_consts.begin();
+      char *str = const_cast<char *>(iter->first);
+
+      m_consts.erase(iter);
+      qfree(str), str = NULL;
+    }
+  }
+
+  enum_t get_enum_id(void) const throw()
+  {
+    return m_enum_id;
+  }
+
+  bool equal(DieHolder &enumeration_holder)
+  {
+    bool ret = false;
+
+    if(m_enum_id != BADNODE)
+    {
+      Dwarf_Die child_die = enumeration_holder.get_child();
+
+      while(child_die != NULL)
+      {
+        DieHolder child_holder(enumeration_holder.get_dbg(), child_die);
+        Dwarf_Half const tag = child_holder.get_tag();
+
+        if(tag == DW_TAG_enumerator)
+        {
+          char *child_name = NULL;
+          Dwarf_Signed value = 0;
+
+          child_name = child_holder.get_name();
+          value = child_holder.get_attr_small_val(DW_AT_const_value);
+          if(!find(child_name, static_cast<uval_t>(value)))
+          {
+            break;
+          }
+        }
+
+        child_die = child_holder.get_sibling();
+      }
+
+      ret = m_consts.empty();
+    }
+
+    return ret;
+  }
+
+private:
+  map<char const *, uval_t, less_strcmp> m_consts;
+  enum_t m_enum_id; // can be BADNODE
+
+  virtual int visit_const(const_t cid, uval_t value)
+  {
+    int ret = 1;
+    ssize_t len =  get_const_name(cid, NULL, 0);
+
+    if(len != -1)
+    {
+      char *buf = static_cast<char *>(qalloc(len));
+
+      (void)get_const_name(cid, buf, len);
+      m_consts[buf] = value;
+      ret = 0;
+    }
+
+    return ret;
+  }
+
+  bool find(char const *name, uval_t value)
+  {
+    bool ret = false;
+    map<char const *, uval_t>::iterator iter = m_consts.find(name);
+
+    if(iter != m_consts.end() && iter->second == value)
+    {
+      char *str = const_cast<char *>(iter->first);
+
+      m_consts.erase(iter);
+      qfree(str), str = NULL;
+      ret = true;
+    }
+
+    return ret;
+  }
+};
+
 void visit_die(DieHolder &die);
 
 // misc IDA utility funs
@@ -484,49 +611,63 @@ static flags_t get_enum_size(Dwarf_Unsigned const size)
   return flag;
 }
 
-void process_enum(DieHolder &enumeration_die)
+void process_enum(DieHolder &enumeration_holder)
 {
   char *name = NULL;
-  Dwarf_Unsigned byte_size = 0;
-  Dwarf_Die child_die = NULL;
-  enum_t enum_type = 0;
+  enum_t enum_id = BADNODE;
   ulong ordinal = 0;
 
-  name = enumeration_die.get_name();
-  // bytesize is mandatory
-  byte_size = enumeration_die.get_bytesize();
+  name = enumeration_holder.get_name();
 
-  // TODO: check if enum has already been defined (hard?)
-  enum_type = add_enum(BADADDR, name, get_enum_size(byte_size));
-  DEBUG("added an enum name='%s' bytesize=%" DW_PR_DUu "\n", name, byte_size);
-
-  child_die = enumeration_die.get_child();
-  while(child_die != NULL)
+  // TODO: handle anonymous enums too
+  if(name != NULL)
   {
-    DieHolder child_holder(enumeration_die.get_dbg(), child_die);
-    Dwarf_Half tag = child_holder.get_tag();
+    EnumCmp enum_cmp(name);
 
-    if(tag == DW_TAG_enumerator)
+    if(enum_cmp.equal(enumeration_holder))
     {
-      char *child_name = NULL;
-      Dwarf_Signed value = 0;
-
-      child_name = child_holder.get_name();
-      value = child_holder.get_attr_small_val(DW_AT_const_value);
-      add_const(enum_type, child_name, static_cast<uval_t>(value));
-      DEBUG("added an enumerator name='%s' value=%" DW_PR_DSd "\n", child_name, value);
-
-      child_holder.cache_useless();
+      enum_id = enum_cmp.get_enum_id();
     }
-
-    child_die = child_holder.get_sibling();
   }
 
-  ordinal = get_enum_type_ordinal(enum_type);
-  enumeration_die.cache_type(ordinal);
+  // enum not already processed?
+  if(enum_id == BADNODE)
+  {
+    // bytesize is mandatory
+    Dwarf_Unsigned byte_size = enumeration_holder.get_bytesize();
+    Dwarf_Die child_die = NULL;
+
+    enum_id = add_enum(BADADDR, name, get_enum_size(byte_size));
+    DEBUG("added an enum name='%s' bytesize=%" DW_PR_DUu "\n", name, byte_size);
+
+    child_die = enumeration_holder.get_child();
+    while(child_die != NULL)
+    {
+      DieHolder child_holder(enumeration_holder.get_dbg(), child_die);
+      Dwarf_Half const tag = child_holder.get_tag();
+
+      if(tag == DW_TAG_enumerator)
+      {
+        char *child_name = NULL;
+        Dwarf_Signed value = 0;
+
+        child_name = child_holder.get_name();
+        value = child_holder.get_attr_small_val(DW_AT_const_value);
+        add_const(enum_id, child_name, static_cast<uval_t>(value));
+        DEBUG("added an enumerator name='%s' value=%" DW_PR_DSd "\n", child_name, value);
+
+        child_holder.cache_useless();
+      }
+
+      child_die = child_holder.get_sibling();
+    }
+  }
+
+  ordinal = get_enum_type_ordinal(enum_id);
+  enumeration_holder.cache_type(ordinal);
 }
 
-void process_base_type(DieHolder &type_die)
+void process_base_type(DieHolder &type_holder)
 {
   char *name = NULL;
   Dwarf_Unsigned byte_size = 0;
@@ -535,9 +676,9 @@ void process_base_type(DieHolder &type_die)
   qtype ida_type;
 
   // mandatory name for a base type
-  name = type_die.get_name();
-  byte_size = type_die.get_bytesize();
-  encoding = type_die.get_attr_small_val(DW_AT_encoding);
+  name = type_holder.get_name();
+  byte_size = type_holder.get_bytesize();
+  encoding = type_holder.get_attr_small_val(DW_AT_encoding);
 
   // TODO: handle bitsize/bitoffset
 
@@ -650,17 +791,17 @@ void process_base_type(DieHolder &type_die)
     }
     else
     {
-      type_die.cache_type(ordinal);
+      type_holder.cache_type(ordinal);
     }
   }
 
   if(!saved)
   {
-    type_die.cache_useless();
+    type_holder.cache_useless();
   }
 }
 
-void process_typedef(DieHolder &typedef_die)
+void process_typedef(DieHolder &typedef_holder)
 {
   char *name = NULL;
   Dwarf_Attribute type_attrib = NULL;
@@ -668,8 +809,8 @@ void process_typedef(DieHolder &typedef_die)
   Dwarf_Half form = 0;
   Dwarf_Error err = NULL;
 
-  name = typedef_die.get_name();
-  type_attrib = typedef_die.get_attr(DW_AT_type);
+  name = typedef_holder.get_name();
+  type_attrib = typedef_holder.get_attr(DW_AT_type);
   CHECK_DWERR(dwarf_whatform(type_attrib, &form, &err), err,
               "cannot get form for the type attribute of a typedef DIE");
 
@@ -690,7 +831,7 @@ void process_typedef(DieHolder &typedef_die)
 
     CHECK_DWERR(dwarf_formref(type_attrib, &offset, &err), err,
                 "cannot get reference address for a typedef DIE type");
-    cu_offset = typedef_die.get_CU_offset_range(&cu_length);
+    cu_offset = typedef_holder.get_CU_offset_range(&cu_length);
     offset += cu_offset;
   }
     break;
@@ -700,7 +841,7 @@ void process_typedef(DieHolder &typedef_die)
 
   if(offset != 0)
   {
-    DieHolder new_die(typedef_die.get_dbg(), offset);
+    DieHolder new_die(typedef_holder.get_dbg(), offset);
     die_cache cache;
     bool ok = false;
 
@@ -726,7 +867,7 @@ void process_typedef(DieHolder &typedef_die)
         if(ok)
         {
           DEBUG("typedef name='%s' original type ordinal=%lu\n", name, cache.ordinal);
-          typedef_die.cache_type(ordinal);
+          typedef_holder.cache_type(ordinal);
         }
       }
     }
@@ -740,27 +881,27 @@ void process_typedef(DieHolder &typedef_die)
   if(offset == 0)
   {
     MSG("cannot process typedef name='%s'\n", name);
-    typedef_die.cache_useless();
+    typedef_holder.cache_useless();
   }
 }
 
-void visit_die(DieHolder &die)
+void visit_die(DieHolder &die_holder)
 {
-  if(!die.in_cache())
+  if(!die_holder.in_cache())
   {
-    Dwarf_Half tag = die.get_tag();
+    Dwarf_Half const tag = die_holder.get_tag();
 
     // TODO: no switch
     switch(tag)
     {
     case DW_TAG_enumeration_type:
-      process_enum(die);
+      process_enum(die_holder);
       break;
     case DW_TAG_base_type:
-      process_base_type(die);
+      process_base_type(die_holder);
       break;
     case DW_TAG_typedef:
-      process_typedef(die);
+      process_typedef(die_holder);
       break;
     default:
       break;
