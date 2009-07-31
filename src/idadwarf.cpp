@@ -35,7 +35,6 @@
 #include "gcc_defs.h"
 
 using namespace std;
-using namespace __gnu_cxx;
 
 #define PLUGIN_NAME "ELF/DWARF plugin"
 
@@ -95,7 +94,7 @@ int get_small_encoding_value(Dwarf_Attribute attrib, Dwarf_Signed *val, Dwarf_Er
 class DieException : public exception
 {
 public:
-  DieException(char const *file, int const line, Dwarf_Error err, char const *fmt, ...)
+  DieException(char const *file, int const line, Dwarf_Error err, char const *fmt, ...) throw()
   {
     ostringstream oss;
     va_list ap;
@@ -115,7 +114,7 @@ public:
 
   }
 
-  virtual char const * what(void) const throw()
+  virtual char const *what(void) const throw()
   {
     return m_msg.c_str();
   }
@@ -128,7 +127,7 @@ private:
 class DieHolder
 {
 public:
-  DieHolder(Dwarf_Debug dbg, Dwarf_Die die, bool dealloc_die=true)
+  DieHolder(Dwarf_Debug dbg, Dwarf_Die die, bool dealloc_die=true) throw()
   {
     init(dbg, die, dealloc_die);
   }
@@ -215,6 +214,50 @@ public:
     }
 
     return attrib;
+  }
+
+  Dwarf_Off get_ref_from_attr(int attr)
+  {
+    Dwarf_Off offset = 0;
+
+    Dwarf_Attribute attrib = get_attr(attr);
+
+    if(attrib != NULL)
+    {
+      Dwarf_Half form = 0;
+      Dwarf_Error err = NULL;
+
+      CHECK_DWERR(dwarf_whatform(attrib, &form, &err), err,
+                  "cannot get form of the DIE attribute %d", attr);
+
+      switch(form)
+      {
+      case DW_FORM_ref_addr:
+        CHECK_DWERR(dwarf_global_formref(attrib, &offset, &err), err,
+                    "cannot get global reference address");
+        break;
+      case DW_FORM_ref1:
+      case DW_FORM_ref2:
+      case DW_FORM_ref4:
+      case DW_FORM_ref8:
+      case DW_FORM_ref_udata:
+      {
+        Dwarf_Off cu_offset = 0;
+        Dwarf_Off cu_length = 0;
+
+        CHECK_DWERR(dwarf_formref(attrib, &offset, &err), err,
+                    "cannot get reference address");
+        cu_offset = get_CU_offset_range(&cu_length);
+        offset += cu_offset;
+      }
+      break;
+      default:
+        MSG("unknown reference form=%d\n", form);
+        break;
+      }
+    }
+
+    return offset;
   }
 
   Dwarf_Signed get_attr_small_val(int attr)
@@ -399,7 +442,7 @@ struct less_strcmp
 class EnumCmp : public const_visitor_t
 {
 public:
-  EnumCmp(enum_t enum_id)
+  EnumCmp(enum_t enum_id) throw()
     : m_enum_id(enum_id)
   {
     // find the enum by its id
@@ -409,7 +452,7 @@ public:
     }
   }
 
-  EnumCmp(char const *enum_name)
+  EnumCmp(char const *enum_name) throw()
     : m_enum_id(BADNODE)
   {
     // find the enum by its (non null) name
@@ -502,7 +545,7 @@ private:
   map<char const *, uval_t, less_strcmp> m_consts;
   enum_t m_enum_id; // can be BADNODE
 
-  virtual int visit_const(const_t cid, uval_t value)
+  virtual int visit_const(const_t cid, uval_t value) throw()
   {
     int ret = 1;
     ssize_t len =  get_const_name(cid, NULL, 0);
@@ -637,7 +680,7 @@ static flags_t get_enum_size(Dwarf_Unsigned const size)
 
 void process_enum(DieHolder &enumeration_holder)
 {
-  char *name = enumeration_holder.get_name();
+  char const *name = enumeration_holder.get_name();
   enum_t enum_id = BADNODE;
   ulong ordinal = 0;
   auto_ptr<EnumCmp> enum_cmp;
@@ -698,16 +741,12 @@ void process_enum(DieHolder &enumeration_holder)
 
 void process_base_type(DieHolder &type_holder)
 {
-  char *name = NULL;
-  Dwarf_Unsigned byte_size = 0;
-  Dwarf_Signed encoding = 0;
+  // mandatory name for a base type
+  char *name = type_holder.get_name();
+  Dwarf_Unsigned byte_size = type_holder.get_bytesize();
+  Dwarf_Signed encoding = type_holder.get_attr_small_val(DW_AT_encoding);
   bool saved = false;
   qtype ida_type;
-
-  // mandatory name for a base type
-  name = type_holder.get_name();
-  byte_size = type_holder.get_bytesize();
-  encoding = type_holder.get_attr_small_val(DW_AT_encoding);
 
   // TODO: handle bitsize/bitoffset
 
@@ -830,43 +869,83 @@ void process_base_type(DieHolder &type_holder)
   }
 }
 
+void process_qualifier_type(DieHolder &qualifier_holder)
+{
+  Dwarf_Off offset = qualifier_holder.get_ref_from_attr(DW_AT_type);
+
+  if(offset != 0)
+  {
+    DieHolder new_die(qualifier_holder.get_dbg(), offset);
+    die_cache cache;
+    bool ok = false;
+
+    // found die may not be in cache
+    visit_die(new_die);
+    ok = new_die.get_cache(&cache);
+    if(ok)
+    {
+      char const *type_name = get_numbered_type_name(idati, cache.ordinal);
+      type_t const *type = NULL;
+
+      ok = get_numbered_type(idati, cache.ordinal, &type);
+      if(type_name == NULL || !ok)
+      {
+        MSG("cannot get type from ordinal=%lu\n", cache.ordinal);
+        ok = false;
+      }
+      else
+      {
+        ulong ordinal = 0;
+        qtype new_type(type);
+        qstring new_name(type_name);
+        Dwarf_Half const tag = qualifier_holder.get_tag();
+
+        switch(tag)
+        {
+        case DW_TAG_const_type:
+          new_type[0] |= BTM_CONST;
+          new_name.before("const ");
+          break;
+        case DW_TAG_volatile_type:
+          new_type[0] |= BTM_VOLATILE;
+          new_name.before("volatile ");
+          break;
+        default:
+          MSG("unknown qualifier tag %d\n", tag);
+          ok = false;
+          break;
+        }
+
+        if(ok)
+        {
+          // TODO: qualifier may not always point to a simple type!
+          ok = set_simple_die_type(new_name.c_str(), new_type, &ordinal);
+          if(ok)
+          {
+            DEBUG("added const name='%s' original type ordinal=%lu\n", name, cache.ordinal);
+            qualifier_holder.cache_type(ordinal);
+          }
+        }
+      }
+    }
+
+    if(!ok)
+    {
+      offset = 0;
+    }
+  }
+
+  if(offset == 0)
+  {
+    MSG("cannot process qualifier type\n");
+    qualifier_holder.cache_useless();
+  }
+}
+
 void process_typedef(DieHolder &typedef_holder)
 {
-  char *name = NULL;
-  Dwarf_Attribute type_attrib = NULL;
-  Dwarf_Off offset = 0;
-  Dwarf_Half form = 0;
-  Dwarf_Error err = NULL;
-
-  name = typedef_holder.get_name();
-  type_attrib = typedef_holder.get_attr(DW_AT_type);
-  CHECK_DWERR(dwarf_whatform(type_attrib, &form, &err), err,
-              "cannot get form for the type attribute of a typedef DIE");
-
-  switch(form)
-  {
-  case DW_FORM_ref_addr:
-    CHECK_DWERR(dwarf_global_formref(type_attrib, &offset, &err), err,
-                "cannot get global reference address for a typedef DIE type");
-    break;
-  case DW_FORM_ref1:
-  case DW_FORM_ref2:
-  case DW_FORM_ref4:
-  case DW_FORM_ref8:
-  case DW_FORM_ref_udata:
-  {
-    Dwarf_Off cu_offset = 0;
-    Dwarf_Off cu_length = 0;
-
-    CHECK_DWERR(dwarf_formref(type_attrib, &offset, &err), err,
-                "cannot get reference address for a typedef DIE type");
-    cu_offset = typedef_holder.get_CU_offset_range(&cu_length);
-    offset += cu_offset;
-  }
-    break;
-  default:
-    break;
-  }
+  char const *name = typedef_holder.get_name();
+  Dwarf_Off offset = typedef_holder.get_ref_from_attr(DW_AT_type);
 
   if(offset != 0)
   {
@@ -887,12 +966,12 @@ void process_typedef(DieHolder &typedef_holder)
       }
       else
       {
-        qtype ida_type;
+        qtype new_type;
         ulong ordinal = 0;
 
-        ida_type.append(BTF_TYPEDEF);
-        append_name(&ida_type, type_name);
-        ok = set_simple_die_type(name, ida_type, &ordinal);
+        new_type.append(BTF_TYPEDEF);
+        append_name(&new_type, type_name);
+        ok = set_simple_die_type(name, new_type, &ordinal);
         if(ok)
         {
           DEBUG("typedef name='%s' original type ordinal=%lu\n", name, cache.ordinal);
@@ -920,7 +999,6 @@ void visit_die(DieHolder &die_holder)
   {
     Dwarf_Half const tag = die_holder.get_tag();
 
-    // TODO: no switch
     switch(tag)
     {
     case DW_TAG_enumeration_type:
@@ -928,6 +1006,10 @@ void visit_die(DieHolder &die_holder)
       break;
     case DW_TAG_base_type:
       process_base_type(die_holder);
+      break;
+    case DW_TAG_volatile_type:
+    case DW_TAG_const_type:
+      process_qualifier_type(die_holder);
       break;
     case DW_TAG_typedef:
       process_typedef(die_holder);
