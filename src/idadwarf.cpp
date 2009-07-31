@@ -17,7 +17,7 @@
 
 #include <map>
 #include <sstream>
-#include <iostream>
+#include <memory>
 
 // IDA headers
 #include <ida.hpp>
@@ -400,9 +400,9 @@ class EnumCmp : public const_visitor_t
 {
 public:
   EnumCmp(enum_t enum_id)
+    : m_enum_id(enum_id)
   {
-    m_enum_id = enum_id;
-    
+    // find the enum by its id
     if(m_enum_id != BADNODE)
     {
       for_all_consts(m_enum_id, *this);
@@ -410,7 +410,9 @@ public:
   }
 
   EnumCmp(char const *enum_name)
+    : m_enum_id(BADNODE)
   {
+    // find the enum by its (non null) name
     if(enum_name != NULL)
     {
       m_enum_id = get_enum(enum_name);
@@ -418,6 +420,28 @@ public:
       if(m_enum_id != BADNODE)
       {
         for_all_consts(m_enum_id, *this);
+      }
+    }
+  }
+
+  EnumCmp(Dwarf_Debug dbg, Dwarf_Die child_die)
+    : m_enum_id(BADNODE)
+  {
+    // find the enum by its first constant name
+    if(child_die != NULL)
+    {
+      DieHolder child_holder(dbg, child_die);
+
+      if(child_holder.get_tag() == DW_TAG_enumerator)
+      {
+        const_t const_id = get_const_by_name(child_holder.get_name());
+
+        m_enum_id = get_const_enum(const_id);
+
+        if(m_enum_id != BADNODE)
+        {
+          for_all_consts(m_enum_id, *this);
+        }
       }
     }
   }
@@ -613,21 +637,26 @@ static flags_t get_enum_size(Dwarf_Unsigned const size)
 
 void process_enum(DieHolder &enumeration_holder)
 {
-  char *name = NULL;
+  char *name = enumeration_holder.get_name();
   enum_t enum_id = BADNODE;
   ulong ordinal = 0;
+  auto_ptr<EnumCmp> enum_cmp;
 
-  name = enumeration_holder.get_name();
-
-  // TODO: handle anonymous enums too
   if(name != NULL)
   {
-    EnumCmp enum_cmp(name);
+    enum_cmp.reset(new EnumCmp(name));
+  }
+  else
+  {
+    // anonymous enum, find by first const name
+    enum_cmp.reset(new EnumCmp(enumeration_holder.get_dbg(),
+                               enumeration_holder.get_child()));
+  }
 
-    if(enum_cmp.equal(enumeration_holder))
-    {
-      enum_id = enum_cmp.get_enum_id();
-    }
+  if(enum_cmp.get() != NULL &&
+     enum_cmp->equal(enumeration_holder))
+  {
+    enum_id = enum_cmp->get_enum_id();
   }
 
   // enum not already processed?
