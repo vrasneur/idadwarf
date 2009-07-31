@@ -401,6 +401,19 @@ public:
     return ret;
   }
 
+  bool get_cache_type(die_cache *cache)
+  {
+    bool ret = get_cache(cache);
+
+    if(ret && cache->type != DIE_TYPE)
+    {
+      DEBUG("tried to access type from ordinal=%lu, but it is not a type!\n", cache->ordinal);
+      ret = false;
+    }
+
+    return ret;
+  }
+
 private:
   Dwarf_Debug m_dbg;
   Dwarf_Die m_die;
@@ -881,7 +894,7 @@ void process_qualifier_type(DieHolder &qualifier_holder)
 
     // found die may not be in cache
     visit_die(new_die);
-    ok = new_die.get_cache(&cache);
+    ok = new_die.get_cache_type(&cache);
     if(ok)
     {
       char const *type_name = get_numbered_type_name(idati, cache.ordinal);
@@ -955,7 +968,7 @@ void process_typedef(DieHolder &typedef_holder)
 
     // found die may not be in cache
     visit_die(new_die);
-    ok = new_die.get_cache(&cache);
+    ok = new_die.get_cache_type(&cache);
     if(ok)
     {
       char const *type_name = get_numbered_type_name(idati, cache.ordinal);
