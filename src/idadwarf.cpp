@@ -57,6 +57,7 @@ extern void error(char const *format, ...) GCC_PRINTF(1, 2);
 
 #define CHECK_DWERR2(cond, err, fmt, ...) if(cond) { throw DieException(__FILE__, __LINE__, err, fmt, ## __VA_ARGS__); }
 #define CHECK_DWERR(cond, err, fmt, ...) CHECK_DWERR2((cond) != DW_DLV_OK, err, fmt, ## __VA_ARGS__)
+#define THROW_DWERR(fmt, ...) throw DieException(__FILE__, __LINE__, NULL, fmt, ## __VA_ARGS__);
 
 // DIE caching struct
 
@@ -219,42 +220,38 @@ public:
   Dwarf_Off get_ref_from_attr(int attr)
   {
     Dwarf_Off offset = 0;
-
+    Dwarf_Half form = 0;
+    Dwarf_Error err = NULL;
     Dwarf_Attribute attrib = get_attr(attr);
 
-    if(attrib != NULL)
+    CHECK_DWERR2(attrib == NULL, NULL, "cannot find DIE attribute %d\n", attr);
+    CHECK_DWERR(dwarf_whatform(attrib, &form, &err), err,
+                "cannot get form of the DIE attribute %d", attr);
+
+    switch(form)
     {
-      Dwarf_Half form = 0;
-      Dwarf_Error err = NULL;
-
-      CHECK_DWERR(dwarf_whatform(attrib, &form, &err), err,
-                  "cannot get form of the DIE attribute %d", attr);
-
-      switch(form)
-      {
-      case DW_FORM_ref_addr:
-        CHECK_DWERR(dwarf_global_formref(attrib, &offset, &err), err,
-                    "cannot get global reference address");
-        break;
-      case DW_FORM_ref1:
-      case DW_FORM_ref2:
-      case DW_FORM_ref4:
-      case DW_FORM_ref8:
-      case DW_FORM_ref_udata:
-      {
-        Dwarf_Off cu_offset = 0;
-        Dwarf_Off cu_length = 0;
-
-        CHECK_DWERR(dwarf_formref(attrib, &offset, &err), err,
-                    "cannot get reference address");
-        cu_offset = get_CU_offset_range(&cu_length);
-        offset += cu_offset;
-      }
+    case DW_FORM_ref_addr:
+      CHECK_DWERR(dwarf_global_formref(attrib, &offset, &err), err,
+                  "cannot get global reference address");
       break;
-      default:
-        MSG("unknown reference form=%d\n", form);
-        break;
-      }
+    case DW_FORM_ref1:
+    case DW_FORM_ref2:
+    case DW_FORM_ref4:
+    case DW_FORM_ref8:
+    case DW_FORM_ref_udata:
+    {
+      Dwarf_Off cu_offset = 0;
+      Dwarf_Off cu_length = 0;
+
+      CHECK_DWERR(dwarf_formref(attrib, &offset, &err), err,
+                  "cannot get reference address");
+      cu_offset = get_CU_offset_range(&cu_length);
+      offset += cu_offset;
+    }
+    break;
+    default:
+      THROW_DWERR("unknown reference form=%d\n", form);
+      break;
     }
 
     return offset;
@@ -267,6 +264,7 @@ public:
     Dwarf_Error err = NULL;
 
     attrib = get_attr(attr);
+    CHECK_DWERR2(attrib == NULL, NULL, "cannot find DIE attribute %d\n", attr);
     CHECK_DWERR(get_small_encoding_value(attrib, &val, &err), err,
                 "cannot get value of a DIE attribute %d", attr);
 
@@ -885,70 +883,61 @@ void process_base_type(DieHolder &type_holder)
 void process_qualifier_type(DieHolder &qualifier_holder)
 {
   Dwarf_Off offset = qualifier_holder.get_ref_from_attr(DW_AT_type);
+  DieHolder new_die(qualifier_holder.get_dbg(), offset);
+  die_cache cache;
+  bool ok = false;
 
-  if(offset != 0)
+  // found die may not be in cache
+  visit_die(new_die);
+  ok = new_die.get_cache_type(&cache);
+  if(ok)
   {
-    DieHolder new_die(qualifier_holder.get_dbg(), offset);
-    die_cache cache;
-    bool ok = false;
+    char const *type_name = get_numbered_type_name(idati, cache.ordinal);
+    type_t const *type = NULL;
 
-    // found die may not be in cache
-    visit_die(new_die);
-    ok = new_die.get_cache_type(&cache);
-    if(ok)
+    ok = get_numbered_type(idati, cache.ordinal, &type);
+    if(type_name == NULL || !ok)
     {
-      char const *type_name = get_numbered_type_name(idati, cache.ordinal);
-      type_t const *type = NULL;
+      MSG("cannot get type from ordinal=%lu\n", cache.ordinal);
+      ok = false;
+    }
+    else
+    {
+      ulong ordinal = 0;
+      qtype new_type(type);
+      qstring new_name(type_name);
+      Dwarf_Half const tag = qualifier_holder.get_tag();
 
-      ok = get_numbered_type(idati, cache.ordinal, &type);
-      if(type_name == NULL || !ok)
+      switch(tag)
       {
-        MSG("cannot get type from ordinal=%lu\n", cache.ordinal);
+      case DW_TAG_const_type:
+        new_type[0] |= BTM_CONST;
+        new_name.before("const ");
+        break;
+      case DW_TAG_volatile_type:
+        new_type[0] |= BTM_VOLATILE;
+        new_name.before("volatile ");
+        break;
+      default:
+        MSG("unknown qualifier tag %d\n", tag);
         ok = false;
+        break;
       }
-      else
+
+      if(ok)
       {
-        ulong ordinal = 0;
-        qtype new_type(type);
-        qstring new_name(type_name);
-        Dwarf_Half const tag = qualifier_holder.get_tag();
-
-        switch(tag)
-        {
-        case DW_TAG_const_type:
-          new_type[0] |= BTM_CONST;
-          new_name.before("const ");
-          break;
-        case DW_TAG_volatile_type:
-          new_type[0] |= BTM_VOLATILE;
-          new_name.before("volatile ");
-          break;
-        default:
-          MSG("unknown qualifier tag %d\n", tag);
-          ok = false;
-          break;
-        }
-
+        // TODO: qualifier may not always point to a simple type!
+        ok = set_simple_die_type(new_name.c_str(), new_type, &ordinal);
         if(ok)
         {
-          // TODO: qualifier may not always point to a simple type!
-          ok = set_simple_die_type(new_name.c_str(), new_type, &ordinal);
-          if(ok)
-          {
-            DEBUG("added const name='%s' original type ordinal=%lu\n", name, cache.ordinal);
-            qualifier_holder.cache_type(ordinal);
-          }
+          DEBUG("added const name='%s' original type ordinal=%lu\n", name, cache.ordinal);
+          qualifier_holder.cache_type(ordinal);
         }
       }
-    }
-
-    if(!ok)
-    {
-      offset = 0;
     }
   }
 
-  if(offset == 0)
+  if(!ok)
   {
     MSG("cannot process qualifier type\n");
     qualifier_holder.cache_useless();
@@ -959,47 +948,38 @@ void process_typedef(DieHolder &typedef_holder)
 {
   char const *name = typedef_holder.get_name();
   Dwarf_Off offset = typedef_holder.get_ref_from_attr(DW_AT_type);
+  DieHolder new_die(typedef_holder.get_dbg(), offset);
+  die_cache cache;
+  bool ok = false;
 
-  if(offset != 0)
+  // found die may not be in cache
+  visit_die(new_die);
+  ok = new_die.get_cache_type(&cache);
+  if(ok)
   {
-    DieHolder new_die(typedef_holder.get_dbg(), offset);
-    die_cache cache;
-    bool ok = false;
-
-    // found die may not be in cache
-    visit_die(new_die);
-    ok = new_die.get_cache_type(&cache);
-    if(ok)
+    char const *type_name = get_numbered_type_name(idati, cache.ordinal);
+    if(type_name == NULL)
     {
-      char const *type_name = get_numbered_type_name(idati, cache.ordinal);
-      if(type_name == NULL)
-      {
-        MSG("cannot get type name from ordinal=%lu\n", cache.ordinal);
-        ok = false;
-      }
-      else
-      {
-        qtype new_type;
-        ulong ordinal = 0;
-
-        new_type.append(BTF_TYPEDEF);
-        append_name(&new_type, type_name);
-        ok = set_simple_die_type(name, new_type, &ordinal);
-        if(ok)
-        {
-          DEBUG("typedef name='%s' original type ordinal=%lu\n", name, cache.ordinal);
-          typedef_holder.cache_type(ordinal);
-        }
-      }
+      MSG("cannot get type name from ordinal=%lu\n", cache.ordinal);
+      ok = false;
     }
-
-    if(!ok)
+    else
     {
-      offset = 0;
+      qtype new_type;
+      ulong ordinal = 0;
+
+      new_type.append(BTF_TYPEDEF);
+      append_name(&new_type, type_name);
+      ok = set_simple_die_type(name, new_type, &ordinal);
+      if(ok)
+      {
+        DEBUG("typedef name='%s' original type ordinal=%lu\n", name, cache.ordinal);
+        typedef_holder.cache_type(ordinal);
+      }
     }
   }
 
-  if(offset == 0)
+  if(!ok)
   {
     MSG("cannot process typedef name='%s'\n", name);
     typedef_holder.cache_useless();
