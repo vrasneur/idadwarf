@@ -880,10 +880,10 @@ void process_base_type(DieHolder &type_holder)
   }
 }
 
-void process_qualifier_type(DieHolder &qualifier_holder)
+void process_modifier_type(DieHolder &modifier_holder)
 {
-  Dwarf_Off offset = qualifier_holder.get_ref_from_attr(DW_AT_type);
-  DieHolder new_die(qualifier_holder.get_dbg(), offset);
+  Dwarf_Off offset = modifier_holder.get_ref_from_attr(DW_AT_type);
+  DieHolder new_die(modifier_holder.get_dbg(), offset);
   die_cache cache;
   bool ok = false;
 
@@ -906,32 +906,45 @@ void process_qualifier_type(DieHolder &qualifier_holder)
       ulong ordinal = 0;
       qtype new_type(type);
       qstring new_name(type_name);
-      Dwarf_Half const tag = qualifier_holder.get_tag();
+      Dwarf_Half const tag = modifier_holder.get_tag();
 
       switch(tag)
       {
       case DW_TAG_const_type:
         new_type[0] |= BTM_CONST;
-        new_name.before("const ");
+        new_name.append(" const");
         break;
       case DW_TAG_volatile_type:
         new_type[0] |= BTM_VOLATILE;
-        new_name.before("volatile ");
+        new_name.append(" volatile");
+        break;
+      case DW_TAG_pointer_type:
+      {
+#if 0
+        // bytesize is optional and [db sizeof(ptr)] for BT_PTR
+        // appears not to work correctly...
+        Dwarf_Unsigned bytesize = modifier_holder.get_bytesize();
+
+        new_type.before(static_cast<uchar>(bytesize));
+#endif
+        new_type.before(BT_PTR);
+        new_name.append(" *");
+      }
         break;
       default:
-        MSG("unknown qualifier tag %d\n", tag);
+        MSG("unknown modifier tag %d\n", tag);
         ok = false;
         break;
       }
 
       if(ok)
       {
-        // TODO: qualifier may not always point to a simple type!
+        // TODO: modifier may not always point to a simple type!
         ok = set_simple_die_type(new_name.c_str(), new_type, &ordinal);
         if(ok)
         {
           DEBUG("added const name='%s' original type ordinal=%lu\n", name, cache.ordinal);
-          qualifier_holder.cache_type(ordinal);
+          modifier_holder.cache_type(ordinal);
         }
       }
     }
@@ -939,8 +952,8 @@ void process_qualifier_type(DieHolder &qualifier_holder)
 
   if(!ok)
   {
-    MSG("cannot process qualifier type\n");
-    qualifier_holder.cache_useless();
+    MSG("cannot process modifier type\n");
+    modifier_holder.cache_useless();
   }
 }
 
@@ -1002,7 +1015,8 @@ void visit_die(DieHolder &die_holder)
       break;
     case DW_TAG_volatile_type:
     case DW_TAG_const_type:
-      process_qualifier_type(die_holder);
+    case DW_TAG_pointer_type:
+      process_modifier_type(die_holder);
       break;
     case DW_TAG_typedef:
       process_typedef(die_holder);
