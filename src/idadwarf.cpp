@@ -128,12 +128,12 @@ private:
 class DieHolder
 {
 public:
-  DieHolder(Dwarf_Debug dbg, Dwarf_Die die, bool dealloc_die=true) throw()
+  DieHolder(Dwarf_Debug dbg, Dwarf_Die die) throw()
   {
-    init(dbg, die, dealloc_die);
+    init(dbg, die);
   }
 
-  DieHolder(Dwarf_Debug dbg, Dwarf_Off offset, bool dealloc_die=true)
+  DieHolder(Dwarf_Debug dbg, Dwarf_Off offset)
   {
     Dwarf_Die die = NULL;
     Dwarf_Error err = NULL;
@@ -141,7 +141,7 @@ public:
     CHECK_DWERR(dwarf_offdie(dbg, offset, &die, &err), err,
                 "cannot retrieve DIE from offset 0x%" DW_PR_DUx, offset);
 
-    init(dbg, die, dealloc_die);
+    init(dbg, die);
   }
 
   ~DieHolder(void) throw()
@@ -152,8 +152,8 @@ public:
       m_name = NULL;
     }
 
-    for(map<int, Dwarf_Attribute>::iterator iter = m_attrs.begin();
-        iter != m_attrs.end(); iter++)
+    for(MapAttrs::iterator iter = m_attrs.begin();
+        iter != m_attrs.end(); ++iter)
     {
       if(iter->second != NULL)
       {
@@ -162,11 +162,15 @@ public:
       }
     }
 
-    if(m_dealloc_die)
-    {
-      dwarf_dealloc(m_dbg, m_die, DW_DLA_DIE);
-      m_die = NULL;
-    }
+    dwarf_dealloc(m_dbg, m_die, DW_DLA_DIE);
+    m_die = NULL;
+  }
+
+  // operators
+
+  bool operator==(DieHolder const &other)
+  {
+    return (m_dbg == other.m_dbg && m_die == other.m_die);
   }
 
   // common getters
@@ -198,7 +202,7 @@ public:
   Dwarf_Attribute get_attr(int attr)
   {
     Dwarf_Attribute attrib = NULL;
-    map<int, Dwarf_Attribute>::const_iterator iter = m_attrs.find(attr);
+    MapAttrs::const_iterator iter = m_attrs.find(attr);
 
     if(iter == m_attrs.end())
     {
@@ -412,13 +416,15 @@ public:
     return ret;
   }
 
+  typedef auto_ptr<DieHolder> Ptr;
+
 private:
   Dwarf_Debug m_dbg;
   Dwarf_Die m_die;
   Dwarf_Off m_offset;
   char *m_name;
-  map<int, Dwarf_Attribute> m_attrs;
-  bool m_dealloc_die;
+  typedef map<int, Dwarf_Attribute> MapAttrs;
+  MapAttrs m_attrs;
   bool m_offset_used;
   // DIEs cache (ordered by offset in .debug_info)
   static netnode *m_dies_node;
@@ -428,13 +434,12 @@ private:
   DieHolder & operator= (DieHolder const &);
 
   // common member vars init for the constructors
-  void init(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die)
+  void init(Dwarf_Debug dbg, Dwarf_Die die)
   {
     m_dbg = dbg;
     m_die = die;
     m_offset = 0;
     m_name = NULL;
-    m_dealloc_die = dealloc_die;
     m_offset_used = false;
   };
 };
@@ -442,9 +447,111 @@ private:
 // init static member vars so the linker will be happy
 netnode *DieHolder::m_dies_node = NULL;
 
+class DieChildIterator : public iterator<input_iterator_tag, Dwarf_Die>
+{
+public:
+  typedef int plop;
+  DieChildIterator(DieHolder &die_holder, Dwarf_Half const tag)
+    : m_tag(tag)
+  {
+    Dwarf_Debug dbg = die_holder.get_dbg();
+    Dwarf_Die child_die = die_holder.get_child();
+
+    set_current_child(dbg, child_die);
+  }
+
+  DieChildIterator(DieChildIterator &other) throw()
+    : m_tag(other.m_tag), m_current_child(other.m_current_child)
+  {
+
+  }
+
+  virtual ~DieChildIterator(void) throw()
+  {
+    m_current_child.reset();
+  }
+
+  bool operator==(DieChildIterator const &other) const throw()
+  {
+    DieHolder *current_child = m_current_child.get();
+    DieHolder *other_child = other.m_current_child.get();
+    bool ret = false;
+
+    // same tag?
+    if(m_tag != other.m_tag)
+    {
+      ret = false;
+    }
+    // got DieHolder and same one?
+    else if(current_child != NULL && other_child != NULL)
+    {
+      ret = (current_child->get_dbg() == other_child->get_dbg() &&
+             current_child->get_die() == other_child->get_die());
+    }
+    // does one have a NULL DieHolder?
+    else
+    {
+      ret = (current_child == NULL && other_child == NULL);
+    }
+
+    return ret;
+  }
+
+  DieHolder *operator*(void) const throw()
+  {
+    return m_current_child.get();
+  }
+
+  DieChildIterator &operator++(void)
+  {
+    if(m_current_child.get() != NULL)
+    {
+      Dwarf_Debug dbg = m_current_child->get_dbg();
+      Dwarf_Die sibling_die = m_current_child->get_sibling();
+
+      set_current_child(dbg, sibling_die);
+    }
+
+    return *this;
+  }
+
+  DieChildIterator operator++(GCC_UNUSED int dummy)
+  {
+    DieChildIterator iter(*this);
+
+    ++iter;
+    return iter;
+  }
+
+private:
+  Dwarf_Half m_tag;
+  DieHolder::Ptr m_current_child;
+
+  void set_current_child(Dwarf_Debug dbg, Dwarf_Die child_die)
+  {
+    while(child_die != NULL)
+    {
+      DieHolder::Ptr child_holder(new DieHolder(dbg, child_die));
+
+      if(child_holder->get_tag() == m_tag)
+      {
+        m_current_child = child_holder;
+        break;
+      }
+
+      child_die = child_holder->get_sibling();
+    }
+
+    if(child_die == NULL)
+    {
+      m_current_child.reset();
+    }
+  }
+};
+
 struct less_strcmp
 {
-  bool operator()(char const *s1, char const *s2) const
+  bool operator()(char const *s1, char const *s2) const throw()
   {
     return strcmp(s1, s2) < 0;
   }
@@ -478,24 +585,22 @@ public:
     }
   }
 
-  EnumCmp(Dwarf_Debug dbg, Dwarf_Die child_die)
+  EnumCmp(DieHolder &enumeration_holder)
     : m_enum_id(BADNODE)
   {
     // find the enum by its first constant name
-    if(child_die != NULL)
+    DieChildIterator iter(enumeration_holder, DW_TAG_enumerator);
+
+    if(*iter != NULL)
     {
-      DieHolder child_holder(dbg, child_die);
+      DieHolder *const_holder = *iter;
+      const_t const_id = get_const_by_name(const_holder->get_name());
 
-      if(child_holder.get_tag() == DW_TAG_enumerator)
+      m_enum_id = get_const_enum(const_id);
+
+      if(m_enum_id != BADNODE)
       {
-        const_t const_id = get_const_by_name(child_holder.get_name());
-
-        m_enum_id = get_const_enum(const_id);
-
-        if(m_enum_id != BADNODE)
-        {
-          for_all_consts(m_enum_id, *this);
-        }
+        for_all_consts(m_enum_id, *this);
       }
     }
   }
@@ -504,7 +609,7 @@ public:
   {
     while(!m_consts.empty())
     {
-      map<char const *, uval_t>::iterator iter = m_consts.begin();
+      MapConsts::iterator iter = m_consts.begin();
       char *str = const_cast<char *>(iter->first);
 
       m_consts.erase(iter);
@@ -523,27 +628,19 @@ public:
 
     if(m_enum_id != BADNODE)
     {
-      Dwarf_Die child_die = enumeration_holder.get_child();
-
-      while(child_die != NULL)
+      for(DieChildIterator iter(enumeration_holder, DW_TAG_enumerator);
+          *iter != NULL; ++iter)
       {
-        DieHolder child_holder(enumeration_holder.get_dbg(), child_die);
-        Dwarf_Half const tag = child_holder.get_tag();
+        DieHolder *child_holder = *iter;
+        char *child_name = NULL;
+        Dwarf_Signed value = 0;
 
-        if(tag == DW_TAG_enumerator)
+        child_name = child_holder->get_name();
+        value = child_holder->get_attr_small_val(DW_AT_const_value);
+        if(!find(child_name, static_cast<uval_t>(value)))
         {
-          char *child_name = NULL;
-          Dwarf_Signed value = 0;
-
-          child_name = child_holder.get_name();
-          value = child_holder.get_attr_small_val(DW_AT_const_value);
-          if(!find(child_name, static_cast<uval_t>(value)))
-          {
-            break;
-          }
+          break;
         }
-
-        child_die = child_holder.get_sibling();
       }
 
       ret = m_consts.empty();
@@ -552,9 +649,16 @@ public:
     return ret;
   }
 
+  typedef auto_ptr<EnumCmp> Ptr;
+
 private:
-  map<char const *, uval_t, less_strcmp> m_consts;
+  typedef map<char const *, uval_t, less_strcmp> MapConsts;
+  MapConsts m_consts;
   enum_t m_enum_id; // can be BADNODE
+
+  // no copying or assignment
+  EnumCmp(EnumCmp const &);
+  EnumCmp & operator= (EnumCmp const &);
 
   virtual int visit_const(const_t cid, uval_t value) throw()
   {
@@ -576,7 +680,7 @@ private:
   bool find(char const *name, uval_t value)
   {
     bool ret = false;
-    map<char const *, uval_t>::iterator iter = m_consts.find(name);
+    MapConsts::iterator iter = m_consts.find(name);
 
     if(iter != m_consts.end() && iter->second == value)
     {
@@ -694,7 +798,7 @@ void process_enum(DieHolder &enumeration_holder)
   char const *name = enumeration_holder.get_name();
   enum_t enum_id = BADNODE;
   ulong ordinal = 0;
-  auto_ptr<EnumCmp> enum_cmp;
+  EnumCmp::Ptr enum_cmp;
 
   if(name != NULL)
   {
@@ -703,8 +807,7 @@ void process_enum(DieHolder &enumeration_holder)
   else
   {
     // anonymous enum, find by first const name
-    enum_cmp.reset(new EnumCmp(enumeration_holder.get_dbg(),
-                               enumeration_holder.get_child()));
+    enum_cmp.reset(new EnumCmp(enumeration_holder));
   }
 
   if(enum_cmp.get() != NULL &&
@@ -718,31 +821,22 @@ void process_enum(DieHolder &enumeration_holder)
   {
     // bytesize is mandatory
     Dwarf_Unsigned byte_size = enumeration_holder.get_bytesize();
-    Dwarf_Die child_die = NULL;
 
     enum_id = add_enum(BADADDR, name, get_enum_size(byte_size));
     DEBUG("added an enum name='%s' bytesize=%" DW_PR_DUu "\n", name, byte_size);
 
-    child_die = enumeration_holder.get_child();
-    while(child_die != NULL)
+    for(DieChildIterator iter(enumeration_holder, DW_TAG_enumerator);
+        *iter != NULL; ++iter)
     {
-      DieHolder child_holder(enumeration_holder.get_dbg(), child_die);
-      Dwarf_Half const tag = child_holder.get_tag();
+      DieHolder *child_holder = *iter;
+      char *child_name = NULL;
+      Dwarf_Signed value = 0;
 
-      if(tag == DW_TAG_enumerator)
-      {
-        char *child_name = NULL;
-        Dwarf_Signed value = 0;
-
-        child_name = child_holder.get_name();
-        value = child_holder.get_attr_small_val(DW_AT_const_value);
-        add_const(enum_id, child_name, static_cast<uval_t>(value));
-        DEBUG("added an enumerator name='%s' value=%" DW_PR_DSd "\n", child_name, value);
-
-        child_holder.cache_useless();
-      }
-
-      child_die = child_holder.get_sibling();
+      child_name = child_holder->get_name();
+      value = child_holder->get_attr_small_val(DW_AT_const_value);
+      add_const(enum_id, child_name, static_cast<uval_t>(value));
+      DEBUG("added an enumerator name='%s' value=%" DW_PR_DSd "\n", child_name, value);
+      child_holder->cache_useless();
     }
   }
 
