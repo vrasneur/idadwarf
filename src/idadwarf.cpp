@@ -1188,6 +1188,7 @@ void visit_die(DieHolder &die_holder)
       break;
     case DW_TAG_array_type:
       process_array(die_holder);
+      break;
     default:
       break;
     }
