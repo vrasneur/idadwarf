@@ -974,6 +974,7 @@ void process_base_type(DieHolder &type_holder)
   }
 }
 
+// TODO: handle const arrays correctly!
 void process_modifier_type(DieHolder &modifier_holder)
 {
   Dwarf_Off offset = modifier_holder.get_ref_from_attr(DW_AT_type);
@@ -1037,7 +1038,7 @@ void process_modifier_type(DieHolder &modifier_holder)
         ok = set_simple_die_type(new_name.c_str(), new_type, &ordinal);
         if(ok)
         {
-          DEBUG("added const name='%s' original type ordinal=%lu\n", name, cache.ordinal);
+          DEBUG("added const from original type='%s' ordinal=%lu\n", type_name, cache.ordinal);
           modifier_holder.cache_type(ordinal);
         }
       }
@@ -1093,6 +1094,76 @@ void process_typedef(DieHolder &typedef_holder)
   }
 }
 
+void process_array(DieHolder &array_holder)
+{
+  Dwarf_Off offset = array_holder.get_ref_from_attr(DW_AT_type);
+  DieHolder new_die(array_holder.get_dbg(), offset);
+  die_cache cache;
+  bool ok = false;
+
+  // found die may not be in cache
+  visit_die(new_die);
+  ok = new_die.get_cache_type(&cache);
+  if(ok)
+  {
+    char const *type_name = get_numbered_type_name(idati, cache.ordinal);
+    type_t const *type = NULL;
+
+    ok = get_numbered_type(idati, cache.ordinal, &type);
+    if(type_name == NULL || !ok)
+    {
+      MSG("cannot get type from ordinal=%lu\n", cache.ordinal);
+      ok = false;
+    }
+    else
+    {
+      DieChildIterator iter(array_holder, DW_TAG_subrange_type);
+      qtype new_type = NULL;
+      Dwarf_Signed size = 0;
+
+      if(*iter != NULL)
+      {
+        DieHolder *subrange_holder = *iter;
+
+        try
+        {
+          size = subrange_holder->get_attr_small_val(DW_AT_upper_bound);
+        }
+        catch(DieException const &exc)
+        {
+          size = 0;
+        }
+      }
+
+      ok = build_array_type(&new_type, type, static_cast<int>(size));
+      if(!ok)
+      {
+        MSG("cannot build array type from original type='%s' ordinal=%lu\n",
+            type_name, cache.ordinal);
+      }
+      else
+      {
+        ostringstream new_name;
+        ulong ordinal = 0;
+
+        new_name << type_name << '[' << size << ']';
+        ok = set_simple_die_type(new_name.str().c_str(), new_type, &ordinal);
+        if(ok)
+        {
+          DEBUG("added array from original type='%s' ordinal=%lu\n", type_name, cache.ordinal);
+          array_holder.cache_type(ordinal);
+        }
+      }
+    }
+  }
+
+  if(!ok)
+  {
+    MSG("cannot process array type\n");
+    array_holder.cache_useless();
+  }
+}
+
 void visit_die(DieHolder &die_holder)
 {
   if(!die_holder.in_cache())
@@ -1115,6 +1186,8 @@ void visit_die(DieHolder &die_holder)
     case DW_TAG_typedef:
       process_typedef(die_holder);
       break;
+    case DW_TAG_array_type:
+      process_array(die_holder);
     default:
       break;
     }
