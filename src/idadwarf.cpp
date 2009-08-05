@@ -1,4 +1,7 @@
-/* idadwarf: IDA plugin for retrieving DWARF debugging symbols
+/* idadwarf
+ * IDA plugin for retrieving DWARF debugging symbols
+ * handles DWARF 2 and 3 symbols (C language focus)
+ *
  * Copyright (c) 2009 Vincent Rasneur <vrasneur@free.fr>
 
  * This program is free software; you can redistribute it and/or modify
@@ -15,9 +18,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include <exception>
 #include <map>
-#include <sstream>
 #include <memory>
+#include <sstream>
+#include <utility>
 
 // IDA headers
 #include <ida.hpp>
@@ -25,6 +30,7 @@
 #include <nalt.hpp>
 #include <typeinf.hpp>
 #include <enum.hpp>
+#include <struct.hpp>
 
 // additional libs headers
 #include <libelf.h>
@@ -67,6 +73,7 @@ struct die_cache
 {
   die_type type;
   ulong ordinal;
+  bool second_pass;
 };
 
 // utility funs
@@ -123,6 +130,44 @@ public:
 private:
   string m_msg;
 };
+
+// RAII dwarf_dealloc wrapper for multiple deallocs
+class DwarfDealloc
+{
+public:
+  DwarfDealloc(Dwarf_Debug dbg) throw()
+    : m_dbg(dbg)
+  {
+
+  }
+
+  ~DwarfDealloc(void) throw()
+  {
+    for(size_t idx = m_deallocs.size(); idx > 0; --idx)
+    {
+      DeallocPair &dealloc_pair = m_deallocs[idx - 1];
+
+      dwarf_dealloc(m_dbg, dealloc_pair.first, dealloc_pair.second);
+      dealloc_pair.first = NULL;
+    }
+  }
+
+  void add(void *ptr, Dwarf_Unsigned dealloc_type) throw()
+  {
+    m_deallocs.push_back(make_pair(ptr, dealloc_type));
+  }
+
+private:
+  Dwarf_Debug m_dbg;
+  typedef pair<void *, Dwarf_Unsigned> DeallocPair;
+  qvector<DeallocPair> m_deallocs;
+
+  // no copying or assignment
+  DwarfDealloc(DwarfDealloc const &);
+  DwarfDealloc &operator=(DwarfDealloc const &);
+};
+
+class CachedDieIterator;
 
 // RAII-powered DIE holder to avoid dwarf_dealloc nightmare
 class DieHolder
@@ -261,6 +306,41 @@ public:
     return offset;
   }
 
+  Dwarf_Small get_member_offset(void)
+  {
+    Dwarf_Attribute attrib = get_attr(DW_AT_data_member_location);
+    Dwarf_Locdesc **llbuf = NULL;
+    Dwarf_Loc *loc = NULL;
+    Dwarf_Signed count = 0;
+    Dwarf_Error err = NULL;
+    DwarfDealloc dealloc(m_dbg);
+
+    CHECK_DWERR2(attrib == NULL, NULL,
+                 "retrieving a member offset implies a 'DW_AT_data_member_location' attribute");
+
+    CHECK_DWERR(dwarf_loclist_n(attrib, &llbuf, &count, &err), err,
+                "cannot get location descriptions");
+
+    // handle deallocation
+    dealloc.add(llbuf, DW_DLA_LIST);
+    for(Dwarf_Signed idx = 0; idx < count; ++idx)
+    {
+      dealloc.add(llbuf[idx], DW_DLA_LOCDESC);
+      dealloc.add(llbuf[idx]->ld_s, DW_DLA_LOC_BLOCK);
+    }
+
+    CHECK_DWERR2(count != 1, NULL,
+                 "only 1 location description is supported");
+    CHECK_DWERR2(llbuf[0]->ld_cents != 1, NULL,
+                "only 1 location in a location description is supported");
+
+    loc = &llbuf[0]->ld_s[0];
+    CHECK_DWERR2(loc->lr_atom != DW_OP_plus_uconst, NULL,
+                 "only the DW_OP_plus_count atom is supported");
+
+    return loc->lr_number;
+  }
+
   Dwarf_Signed get_attr_small_val(int attr)
   {
     Dwarf_Attribute attrib = NULL;
@@ -373,17 +453,28 @@ public:
   {
     if(!in_cache())
     {
-      die_cache cache = { DIE_USELESS, 0 };
+      die_cache cache = { DIE_USELESS, 0, false };
 
       m_dies_node->supset(static_cast<sval_t>(get_offset()), &cache, sizeof(cache));
     }
   }
 
-  void cache_type(ulong const ordinal)
+  void cache_type(ulong const ordinal, bool second_pass=false)
   {
-    if(!in_cache())
+    die_cache cache;
+    bool do_cache = true;
+
+    // override an useless cache type
+    if(get_cache(&cache) && cache.type != DIE_USELESS)
     {
-      die_cache cache = { DIE_TYPE, ordinal };
+      do_cache = false;
+    }
+
+    if(do_cache)
+    {
+      cache.type = DIE_TYPE;
+      cache.ordinal = ordinal;
+      cache.second_pass = second_pass;
 
       m_dies_node->supset(static_cast<sval_t>(get_offset()), &cache, sizeof(cache));
     }
@@ -429,9 +520,11 @@ private:
   // DIEs cache (ordered by offset in .debug_info)
   static netnode *m_dies_node;
 
+  friend  class CachedDieIterator;
+
   // no copying or assignment
   DieHolder(DieHolder const &);
-  DieHolder & operator= (DieHolder const &);
+  DieHolder &operator=(DieHolder const &);
 
   // common member vars init for the constructors
   void init(Dwarf_Debug dbg, Dwarf_Die die)
@@ -450,7 +543,6 @@ netnode *DieHolder::m_dies_node = NULL;
 class DieChildIterator : public iterator<input_iterator_tag, Dwarf_Die>
 {
 public:
-  typedef int plop;
   DieChildIterator(DieHolder &die_holder, Dwarf_Half const tag)
     : m_tag(tag)
   {
@@ -546,6 +638,89 @@ private:
     {
       m_current_child.reset();
     }
+  }
+};
+
+class CachedDieIterator : public iterator<input_iterator_tag, Dwarf_Die>
+{
+public:
+  CachedDieIterator(Dwarf_Debug dbg)
+    : m_dbg(dbg), m_idx(DieHolder::m_dies_node->sup1st())
+  {
+    set_current_die();
+  }
+
+  CachedDieIterator(CachedDieIterator &other) throw()
+    : m_dbg(other.m_dbg), m_idx(other.m_idx), m_current_die(other.m_current_die)
+  {
+
+  }
+
+  virtual ~CachedDieIterator(void) throw()
+  {
+    m_current_die.reset();
+  }
+
+  bool operator==(CachedDieIterator const &other) const throw()
+  {
+    DieHolder *current_die = m_current_die.get();
+    DieHolder *other_die = other.m_current_die.get();
+    bool ret = false;
+
+    // same current offset?
+    if(m_idx != other.m_idx)
+    {
+      ret = false;
+    }
+    // got DieHolder and same one?
+    else if(current_die != NULL && other_die != NULL)
+    {
+      ret = (current_die->get_dbg() == other_die->get_dbg() &&
+             current_die->get_die() == other_die->get_die());
+    }
+    // does one have a NULL DieHolder?
+    else
+    {
+      ret = (current_die == NULL && other_die == NULL);
+    }
+
+    return ret;
+  }
+
+  DieHolder *operator*(void) const throw()
+  {
+    return m_current_die.get();
+  }
+
+  CachedDieIterator &operator++(void)
+  {
+    if(m_current_die.get() != NULL)
+    {
+      m_idx = DieHolder::m_dies_node->supnxt(m_idx);
+
+      set_current_die();
+    }
+
+    return *this;
+  }
+
+  CachedDieIterator operator++(GCC_UNUSED int dummy)
+  {
+    CachedDieIterator iter(*this);
+
+    ++iter;
+    return iter;
+  }
+
+private:
+  Dwarf_Debug m_dbg;
+  nodeidx_t m_idx;
+  DieHolder::Ptr m_current_die;
+
+  void set_current_die(void)
+  {
+    m_current_die.reset((m_idx == BADNODE) ?
+                        NULL : new DieHolder(m_dbg, static_cast<Dwarf_Off>(m_idx)));
   }
 };
 
@@ -695,7 +870,9 @@ private:
   }
 };
 
-void visit_die(DieHolder &die);
+// forward declarations
+
+void try_visit_die(DieHolder &die);
 
 // misc IDA utility funs
 
@@ -974,126 +1151,188 @@ void process_base_type(DieHolder &type_holder)
   }
 }
 
-// TODO: handle const arrays correctly!
-void process_modifier_type(DieHolder &modifier_holder)
+bool add_unspecified_type(ulong *ordinal)
 {
-  Dwarf_Off offset = modifier_holder.get_ref_from_attr(DW_AT_type);
-  DieHolder new_die(modifier_holder.get_dbg(), offset);
-  die_cache cache;
+  qtype type;
+  ulong new_ordinal = 0;
+  bool saved = false;
+
+  type.append(BTF_VOID);
+  saved = set_simple_die_type("void", type, &new_ordinal);
+  if(saved)
+  {
+    DEBUG("added unspecified type ordinal=%lu\n", new_ordinal);
+    *ordinal = new_ordinal;
+  }
+  else
+  {
+    MSG("cannot add unspecified type\n");
+  }
+
+  return saved;
+}
+
+void process_unspecified(GCC_UNUSED DieHolder &unspecified_holder)
+{
+  ulong ordinal = 0;
+
+  (void)add_unspecified_type(&ordinal);
+}
+
+bool look_ref_type(DieHolder &modifier_holder, ulong *ordinal)
+{
+  bool found = true;
+
+  if(modifier_holder.get_attr(DW_AT_type) == NULL)
+  {
+    // add an unspecified type for modifiers without type attribute
+    found = add_unspecified_type(ordinal);
+  }
+  else
+  // need no find the original type?
+  {
+    Dwarf_Off offset = modifier_holder.get_ref_from_attr(DW_AT_type);
+    DieHolder new_die(modifier_holder.get_dbg(), offset);
+    die_cache cache;
+
+    // found die may not be in cache
+    try_visit_die(new_die);
+    found = new_die.get_cache_type(&cache);
+    if(found)
+    {
+      *ordinal = cache.ordinal;
+    }
+  }
+
+  return found;
+}
+
+// TODO: handle const arrays correctly!
+void process_typed_modifier(DieHolder &modifier_holder, ulong type_ordinal)
+{
+  type_t const *type = NULL;
+  char const *type_name = get_numbered_type_name(idati, type_ordinal);
   bool ok = false;
 
-  // found die may not be in cache
-  visit_die(new_die);
-  ok = new_die.get_cache_type(&cache);
-  if(ok)
+  ok = get_numbered_type(idati, type_ordinal, &type);
+  if(type_name == NULL || !ok)
   {
-    char const *type_name = get_numbered_type_name(idati, cache.ordinal);
-    type_t const *type = NULL;
+    MSG("cannot get type from ordinal=%lu\n", type_ordinal);
+    ok = false;
+  }
+  else
+  {
+    ulong ordinal = 0;
+    qtype new_type(type);
+    qstring new_name(type_name);
+    Dwarf_Half const tag = modifier_holder.get_tag();
 
-    ok = get_numbered_type(idati, cache.ordinal, &type);
-    if(type_name == NULL || !ok)
+    switch(tag)
     {
-      MSG("cannot get type from ordinal=%lu\n", cache.ordinal);
-      ok = false;
-    }
-    else
+    case DW_TAG_const_type:
+      new_type[0] |= BTM_CONST;
+      new_name.append(" const");
+      break;
+    case DW_TAG_volatile_type:
+      new_type[0] |= BTM_VOLATILE;
+      new_name.append(" volatile");
+      break;
+    case DW_TAG_pointer_type:
     {
-      ulong ordinal = 0;
-      qtype new_type(type);
-      qstring new_name(type_name);
-      Dwarf_Half const tag = modifier_holder.get_tag();
-
-      switch(tag)
-      {
-      case DW_TAG_const_type:
-        new_type[0] |= BTM_CONST;
-        new_name.append(" const");
-        break;
-      case DW_TAG_volatile_type:
-        new_type[0] |= BTM_VOLATILE;
-        new_name.append(" volatile");
-        break;
-      case DW_TAG_pointer_type:
-      {
 #if 0
-        // bytesize is optional and [db sizeof(ptr)] for BT_PTR
-        // appears not to work correctly...
-        Dwarf_Unsigned bytesize = modifier_holder.get_bytesize();
+      // bytesize is optional and [db sizeof(ptr)] for BT_PTR
+      // appears not to work correctly...
+      Dwarf_Unsigned bytesize = modifier_holder.get_bytesize();
 
-        new_type.before(static_cast<uchar>(bytesize));
+      new_type.before(static_cast<uchar>(bytesize));
 #endif
-        new_type.before(BT_PTR);
-        new_name.append(" *");
-      }
-        break;
-      default:
-        MSG("unknown modifier tag %d\n", tag);
-        ok = false;
-        break;
-      }
+      new_type.before(BT_PTR);
+      new_name.append(" *");
+    }
+    break;
+    default:
+      MSG("unknown modifier tag %d\n", tag);
+      ok = false;
+      break;
+    }
 
+    if(ok)
+    {
+      // TODO: modifier may not always point to a simple type!
+      ok = set_simple_die_type(new_name.c_str(), new_type, &ordinal);
       if(ok)
       {
-        // TODO: modifier may not always point to a simple type!
-        ok = set_simple_die_type(new_name.c_str(), new_type, &ordinal);
-        if(ok)
-        {
-          DEBUG("added const from original type='%s' ordinal=%lu\n", type_name, cache.ordinal);
-          modifier_holder.cache_type(ordinal);
-        }
+        DEBUG("added modifier from original type='%s' ordinal=%lu\n", type_name, cache.ordinal);
+        modifier_holder.cache_type(ordinal);
       }
     }
   }
 
   if(!ok)
   {
-    MSG("cannot process modifier type\n");
+    MSG("cannot process modifier type offset=0x%" DW_PR_DUx "\n",
+        modifier_holder.get_offset());
     modifier_holder.cache_useless();
+  }
+}
+
+void process_modifier(DieHolder &modifier_holder)
+{
+  ulong ordinal = 0;
+  bool ok = look_ref_type(modifier_holder, &ordinal);
+
+  if(ok)
+  {
+    process_typed_modifier(modifier_holder, ordinal);
+  }
+}
+
+void process_typed_typedef(DieHolder &typedef_holder, ulong type_ordinal)
+{
+  char const *name = typedef_holder.get_name();
+  char const *type_name = get_numbered_type_name(idati, type_ordinal);
+  bool ok = false;
+
+  if(type_name == NULL)
+  {
+    MSG("cannot get type name from ordinal=%lu\n", type_ordinal);
+    ok = false;
+  }
+  else
+  {
+    qtype new_type;
+    ulong ordinal = 0;
+
+    new_type.append(BTF_TYPEDEF);
+    append_name(&new_type, type_name);
+    ok = set_simple_die_type(name, new_type, &ordinal);
+    if(ok)
+    {
+      DEBUG("typedef name='%s' original type ordinal=%lu\n", name, cache.ordinal);
+      typedef_holder.cache_type(ordinal);
+    }
+  }
+
+  if(!ok)
+  {
+    MSG("cannot process typedef name='%s' offset=0x%" DW_PR_DUx "\n",
+        name, typedef_holder.get_offset());
+    typedef_holder.cache_useless();
   }
 }
 
 void process_typedef(DieHolder &typedef_holder)
 {
-  char const *name = typedef_holder.get_name();
-  Dwarf_Off offset = typedef_holder.get_ref_from_attr(DW_AT_type);
-  DieHolder new_die(typedef_holder.get_dbg(), offset);
-  die_cache cache;
-  bool ok = false;
+  ulong ordinal = 0;
+  bool ok = look_ref_type(typedef_holder, &ordinal);
 
-  // found die may not be in cache
-  visit_die(new_die);
-  ok = new_die.get_cache_type(&cache);
   if(ok)
   {
-    char const *type_name = get_numbered_type_name(idati, cache.ordinal);
-    if(type_name == NULL)
-    {
-      MSG("cannot get type name from ordinal=%lu\n", cache.ordinal);
-      ok = false;
-    }
-    else
-    {
-      qtype new_type;
-      ulong ordinal = 0;
-
-      new_type.append(BTF_TYPEDEF);
-      append_name(&new_type, type_name);
-      ok = set_simple_die_type(name, new_type, &ordinal);
-      if(ok)
-      {
-        DEBUG("typedef name='%s' original type ordinal=%lu\n", name, cache.ordinal);
-        typedef_holder.cache_type(ordinal);
-      }
-    }
-  }
-
-  if(!ok)
-  {
-    MSG("cannot process typedef name='%s'\n", name);
-    typedef_holder.cache_useless();
+    process_typed_typedef(typedef_holder, ordinal);
   }
 }
 
+// TODO: handle multimensional arrays
 void process_array(DieHolder &array_holder)
 {
   Dwarf_Off offset = array_holder.get_ref_from_attr(DW_AT_type);
@@ -1102,7 +1341,7 @@ void process_array(DieHolder &array_holder)
   bool ok = false;
 
   // found die may not be in cache
-  visit_die(new_die);
+  try_visit_die(new_die);
   ok = new_die.get_cache_type(&cache);
   if(ok)
   {
@@ -1146,7 +1385,12 @@ void process_array(DieHolder &array_holder)
         ostringstream new_name;
         ulong ordinal = 0;
 
-        new_name << type_name << '[' << size << ']';
+        new_name << type_name << '[';
+        if(size > 0)
+        { 
+          new_name << size;
+        }
+        new_name << ']';
         ok = set_simple_die_type(new_name.str().c_str(), new_type, &ordinal);
         if(ok)
         {
@@ -1159,9 +1403,122 @@ void process_array(DieHolder &array_holder)
 
   if(!ok)
   {
-    MSG("cannot process array type\n");
+    MSG("cannot process array type offset=0x%" DW_PR_DUx "\n",
+        array_holder.get_offset());
     array_holder.cache_useless();
   }
+}
+
+void process_complete_structure(DieHolder &structure_holder, char const *name,
+                                ulong *ordinal, bool *second_pass)
+{
+  tid_t struc_id = add_struc(BADADDR, name);
+  bool ok = false;
+
+  if(struc_id != BADNODE)
+  {
+    struc_t *sptr = get_struc(struc_id);
+
+    for(DieChildIterator iter(structure_holder, DW_TAG_member);
+        *iter != NULL; ++iter)
+    {
+      DieHolder *member_holder = *iter;
+      char const *member_name = member_holder->get_name();
+      Dwarf_Off const offset = member_holder->get_ref_from_attr(DW_AT_type);
+      DieHolder new_die(member_holder->get_dbg(), offset);
+      ea_t moffset = static_cast<ea_t>(member_holder->get_member_offset());
+      die_cache cache;
+
+      try_visit_die(new_die);
+      ok = new_die.get_cache_type(&cache);
+      if(!ok)
+      {
+        // member type not in cache
+        // maybe caused by a forward declaration?
+        *second_pass = true;
+      }
+      else
+      {
+        char const *type_name = get_numbered_type_name(idati, cache.ordinal);
+        type_t const *type = NULL;
+
+        ok = get_numbered_type(idati, cache.ordinal, &type);
+        if(type_name != NULL && ok)
+        {
+          size_t size = get_type_size0(idati, type);
+
+          if(size == BADSIZE)
+          {
+            MSG("cannot get size of member name='%s'\n", member_name);
+          }
+          else
+          {
+            if(is_type_enum(*type))
+            {
+              enum_t enum_id = getn_enum(cache.ordinal);
+              uval_t serial = get_enum_idx(cache.ordinal);
+              typeinfo_t mt;
+
+              mt.ec.tid = enum_id;
+              mt.ec.serial = serial;
+              add_struc_member(sptr, member_name, moffset, enumflag(), &mt, size);
+            }
+            else if(is_type_struct(*type))
+            {
+              tid_t mstruc_id = get_struc_id(type_name);
+              typeinfo_t mt;
+
+              mt.tid = mstruc_id;
+              add_struc_member(sptr, member_name, moffset, struflag(), &mt, size);
+            }
+            else
+            {
+              add_struc_member(sptr, member_name, moffset, 0, NULL, size);
+              member_t *mptr = get_member_by_name(sptr, member_name);
+              set_member_tinfo(idati, sptr, mptr, 0, type, NULL, 0);
+            }
+
+            DEBUG("adding one member name='%s'\n", member_name);
+          }
+        }
+      }
+    }
+
+    *ordinal = sptr->ordinal;
+  }
+}
+
+void process_structure(DieHolder &structure_holder)
+{
+  char const *name = structure_holder.get_name();
+  Dwarf_Attribute declaration = structure_holder.get_attr(DW_AT_declaration);
+  ulong ordinal = 0;
+  bool second_pass = false;
+
+  // got an incomplete type?
+  if(declaration != NULL)
+  {
+    qtype new_type;
+
+    new_type.append(BTF_VOID);
+    set_simple_die_type(name, new_type, &ordinal);
+  }
+  else
+  {
+    process_complete_structure(structure_holder, name, &ordinal, &second_pass);
+  }
+
+  if(ordinal != 0)
+  {
+    DEBUG("added struct name='%s' ordinal=%lu\n", name, ordinal);
+    structure_holder.cache_type(ordinal, second_pass);
+  }
+  else
+  {
+    MSG("cannot process structure offset=0x%" DW_PR_DUx "\n",
+        structure_holder.get_offset());
+    structure_holder.cache_useless();
+  }  
 }
 
 void visit_die(DieHolder &die_holder)
@@ -1178,10 +1535,13 @@ void visit_die(DieHolder &die_holder)
     case DW_TAG_base_type:
       process_base_type(die_holder);
       break;
+    case DW_TAG_unspecified_type:
+      process_unspecified(die_holder);
+      break;
     case DW_TAG_volatile_type:
     case DW_TAG_const_type:
     case DW_TAG_pointer_type:
-      process_modifier_type(die_holder);
+      process_modifier(die_holder);
       break;
     case DW_TAG_typedef:
       process_typedef(die_holder);
@@ -1189,8 +1549,44 @@ void visit_die(DieHolder &die_holder)
     case DW_TAG_array_type:
       process_array(die_holder);
       break;
+    case DW_TAG_structure_type:
+      process_structure(die_holder);
+      break;
     default:
       break;
+    }
+  }
+}
+
+void try_visit_die(DieHolder &die_holder)
+{
+  try
+  {
+    visit_die(die_holder);
+  }
+  catch(DieException const &exc)
+  {
+    MSG("cannot process DIE (skipping): %s\n", exc.what());
+  }
+}
+
+void do_second_pass(Dwarf_Debug dbg)
+{
+  for(CachedDieIterator iter(dbg);
+      *iter != NULL; ++iter)
+  {
+    DieHolder *die_holder = *iter;
+    die_cache cache;
+    bool found = die_holder->get_cache(&cache);
+
+    if(found && cache.type == DIE_TYPE && cache.second_pass)
+    {
+      if(die_holder->get_tag() == DW_TAG_structure_type)
+      {
+        char const *type_name = get_numbered_type_name(idati, cache.ordinal);
+
+        MSG("TODO: struct name='%s' ordinal=%lu needs a second pass\n", type_name, cache.ordinal);
+      }
     }
   }
 }
@@ -1208,14 +1604,7 @@ void do_dies_traversal(Dwarf_Debug dbg, Dwarf_Die root_die)
 
     queue.pop_back();
 
-    try
-    {
-      visit_die(holder);
-    }
-    catch(DieException const &exc)
-    {
-      MSG("cannot process current DIE (skipping): %s\n", exc.what());
-    }
+    try_visit_die(holder);
 
     try
     {
@@ -1343,6 +1732,7 @@ void idaapi run(GCC_UNUSED int arg)
       DieHolder::init_cache();
 
       process_cus(dbg);
+      do_second_pass(dbg);
 
       ret = dwarf_finish(dbg, &err);
       if(ret != DW_DLV_OK)
