@@ -19,6 +19,7 @@
  */
 
 #include <exception>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -540,7 +541,7 @@ private:
 // init static member vars so the linker will be happy
 netnode *DieHolder::m_dies_node = NULL;
 
-class DieChildIterator : public iterator<input_iterator_tag, Dwarf_Die>
+class DieChildIterator : public iterator<input_iterator_tag, DieHolder *>
 {
 public:
   DieChildIterator(DieHolder &die_holder, Dwarf_Half const tag)
@@ -565,8 +566,8 @@ public:
 
   bool operator==(DieChildIterator const &other) const throw()
   {
-    DieHolder *current_child = m_current_child.get();
-    DieHolder *other_child = other.m_current_child.get();
+    value_type current_child = m_current_child.get();
+    value_type other_child = other.m_current_child.get();
     bool ret = false;
 
     // same tag?
@@ -589,7 +590,7 @@ public:
     return ret;
   }
 
-  DieHolder *operator*(void) const throw()
+  value_type operator*(void) const throw()
   {
     return m_current_child.get();
   }
@@ -616,7 +617,7 @@ public:
   }
 
 private:
-  Dwarf_Half m_tag;
+  Dwarf_Half const m_tag;
   DieHolder::Ptr m_current_child;
 
   void set_current_child(Dwarf_Debug dbg, Dwarf_Die child_die)
@@ -641,17 +642,17 @@ private:
   }
 };
 
-class CachedDieIterator : public iterator<input_iterator_tag, Dwarf_Die>
+class CachedDieIterator : public iterator<input_iterator_tag, DieHolder *>
 {
 public:
   CachedDieIterator(Dwarf_Debug dbg)
-    : m_dbg(dbg), m_idx(DieHolder::m_dies_node->sup1st())
+    : m_dbg(dbg), m_current_idx(DieHolder::m_dies_node->sup1st())
   {
     set_current_die();
   }
 
   CachedDieIterator(CachedDieIterator &other) throw()
-    : m_dbg(other.m_dbg), m_idx(other.m_idx), m_current_die(other.m_current_die)
+    : m_dbg(other.m_dbg), m_current_idx(other.m_current_idx), m_current_die(other.m_current_die)
   {
 
   }
@@ -663,12 +664,12 @@ public:
 
   bool operator==(CachedDieIterator const &other) const throw()
   {
-    DieHolder *current_die = m_current_die.get();
-    DieHolder *other_die = other.m_current_die.get();
+    value_type current_die = m_current_die.get();
+    value_type other_die = other.m_current_die.get();
     bool ret = false;
 
     // same current offset?
-    if(m_idx != other.m_idx)
+    if(m_current_idx != other.m_current_idx)
     {
       ret = false;
     }
@@ -687,7 +688,7 @@ public:
     return ret;
   }
 
-  DieHolder *operator*(void) const throw()
+  value_type operator*(void) const throw()
   {
     return m_current_die.get();
   }
@@ -696,7 +697,7 @@ public:
   {
     if(m_current_die.get() != NULL)
     {
-      m_idx = DieHolder::m_dies_node->supnxt(m_idx);
+      m_current_idx = DieHolder::m_dies_node->supnxt(m_current_idx);
 
       set_current_die();
     }
@@ -714,13 +715,13 @@ public:
 
 private:
   Dwarf_Debug m_dbg;
-  nodeidx_t m_idx;
+  nodeidx_t m_current_idx;
   DieHolder::Ptr m_current_die;
 
   void set_current_die(void)
   {
-    m_current_die.reset((m_idx == BADNODE) ?
-                        NULL : new DieHolder(m_dbg, static_cast<Dwarf_Off>(m_idx)));
+    m_current_die.reset((m_current_idx == BADNODE) ?
+                        NULL : new DieHolder(m_dbg, static_cast<Dwarf_Off>(m_current_idx)));
   }
 };
 
