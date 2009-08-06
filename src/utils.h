@@ -1,7 +1,6 @@
 #ifndef IDADWARF_UTILS_H
 #define IDADWARF_UTILS_H
 
-#include <stdint.h>
 #include <cstdlib>
 #include <cerrno>
 

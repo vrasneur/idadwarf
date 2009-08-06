@@ -73,7 +73,7 @@ $(LIBDWARF): $(DWARFDIR)
 	CPPFLAGS="-I$(ABSDEPSDIR)/include" LDFLAGS="-L$(ABSDEPSDIR)/lib",\
 	--enable-nonshared,libdwarf.a install)
 
-$(BIN): %.plw: %.cpp
+$(BIN): %.plw: %.cpp utils.h gcc_defs.h
 	$(CC) $(CFLAGS) $(addprefix -I,$(INCLUDES)) -L$(LIBDIR) $< -o $@ $(IDALIB) -ldwarf -lelf
 
 install: all $(IDADIR)
