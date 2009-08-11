@@ -39,7 +39,11 @@ $(call check,inpath,$(CC),compiler not in your path)
 $(call check,isdir,$(IDAINC),IDA SDK include path not found)
 $(call check,isfile,$(IDALIB),IDA library not found)
 
-CFLAGS := -std=gnu++98 -Wall -Wextra -Wformat=2 -Wold-style-cast -Wcast-qual -Wcast-align -DNDEBUG -D__NT__ -D__IDP__ -Wl,--dll -shared -mno-cygwin
+CFLAGS = -std=gnu++98 -Wall -Wextra -Wformat=2 -Wold-style-cast -Wcast-qual -Wcast-align -D__NT__ -D__IDP__ -Wl,--dll -shared -mno-cygwin
+ifeq ($(DEBUG),)
+CFLAGS += -DNDEBUG
+endif
+
 MACHINE := $(strip $(shell $(CC) -dumpmachine))
 BIN := idadwarf.plw
 

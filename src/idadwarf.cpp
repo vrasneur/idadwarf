@@ -1257,7 +1257,7 @@ void process_typed_modifier(DieHolder &modifier_holder, ulong type_ordinal)
       ok = set_simple_die_type(new_name.c_str(), new_type, &ordinal);
       if(ok)
       {
-        DEBUG("added modifier from original type='%s' ordinal=%lu\n", type_name, cache.ordinal);
+        DEBUG("added modifier from original type='%s' ordinal=%lu\n", type_name, ordinal);
         modifier_holder.cache_type(ordinal);
       }
     }
@@ -1303,7 +1303,7 @@ void process_typed_typedef(DieHolder &typedef_holder, ulong type_ordinal)
     ok = set_simple_die_type(name, new_type, &ordinal);
     if(ok)
     {
-      DEBUG("typedef name='%s' original type ordinal=%lu\n", name, cache.ordinal);
+      DEBUG("typedef name='%s' original type ordinal=%lu\n", name, ordinal);
       typedef_holder.cache_type(ordinal);
     }
   }
