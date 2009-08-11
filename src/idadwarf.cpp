@@ -1,7 +1,7 @@
 /* idadwarf
  * IDA plugin for retrieving DWARF debugging symbols
  * handles DWARF 2 and 3 symbols (C language focus)
- *
+
  * Copyright (c) 2009 Vincent Rasneur <vrasneur@free.fr>
 
  * This program is free software; you can redistribute it and/or modify
@@ -1412,13 +1412,89 @@ void process_array(DieHolder &array_holder)
   }
 }
 
+void add_structure_member(DieHolder *member_holder, struc_t *sptr,
+                          bool *second_pass)
+{
+  char const *member_name = member_holder->get_name();
+  Dwarf_Off const offset = member_holder->get_ref_from_attr(DW_AT_type);
+  DieHolder new_die(member_holder->get_dbg(), offset);
+  ea_t moffset = sptr->is_union() ? 0 : static_cast<ea_t>(member_holder->get_member_offset());
+  die_cache cache;
+  bool ok = false;
+
+  try_visit_die(new_die);
+  ok = new_die.get_cache_type(&cache);
+  if(!ok)
+  {
+    // member type not in cache
+    // maybe caused by a forward declaration?
+    *second_pass = true;
+  }
+  else
+  {
+    char const *type_name = get_numbered_type_name(idati, cache.ordinal);
+    type_t const *type = NULL;
+
+    ok = get_numbered_type(idati, cache.ordinal, &type);
+    if(type_name == NULL || !ok)
+    {
+      MSG("cannot get member type from ordinal=%lu\n", cache.ordinal);
+    }
+    else
+    {
+      size_t size = get_type_size0(idati, type);
+
+      if(size == BADSIZE)
+      {
+        MSG("cannot get size of member name='%s'\n", member_name);
+      }
+      else
+      {
+        if(is_type_enum(*type))
+        {
+          enum_t enum_id = getn_enum(cache.ordinal);
+          uval_t serial = get_enum_idx(cache.ordinal);
+          typeinfo_t mt;
+
+          mt.ec.tid = enum_id;
+          mt.ec.serial = serial;
+          add_struc_member(sptr, member_name, moffset, enumflag(), &mt, size);
+        }
+        else if(is_type_struni(*type))
+        {
+          tid_t mstruc_id = get_struc_id(type_name);
+          typeinfo_t mt;
+          int res = 0;
+
+          // override type size (we got an error if we don't do that...)
+          size = get_struc_size(mstruc_id);
+          mt.tid = mstruc_id;
+          res = add_struc_member(sptr, member_name, moffset, struflag(), &mt, size);
+          if(res != 0)
+          {
+            MSG("failed to add struct/union member res=%d name='%s' offset=0x%" DW_PR_DUx "\n",
+                res, member_name, offset);
+          }
+        }
+        else
+        {
+          add_struc_member(sptr, member_name, moffset, 0, NULL, size);
+          member_t *mptr = get_member_by_name(sptr, member_name);
+          set_member_tinfo(idati, sptr, mptr, 0, type, NULL, 0);
+        }
+        
+        DEBUG("adding one member name='%s'\n", member_name);
+      }
+    }
+  }
+}
+
 // structure/union processing (no incomplete type)
 void process_complete_structure(DieHolder &structure_holder, char const *name,
                                 ulong *ordinal, bool *second_pass)
 {
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
   tid_t struc_id = add_struc(BADADDR, name, is_union);
-  bool ok = false;
 
   if(struc_id != BADNODE)
   {
@@ -1427,78 +1503,7 @@ void process_complete_structure(DieHolder &structure_holder, char const *name,
     for(DieChildIterator iter(structure_holder, DW_TAG_member);
         *iter != NULL; ++iter)
     {
-      DieHolder *member_holder = *iter;
-      char const *member_name = member_holder->get_name();
-      Dwarf_Off const offset = member_holder->get_ref_from_attr(DW_AT_type);
-      DieHolder new_die(member_holder->get_dbg(), offset);
-      ea_t moffset = is_union ? 0 : static_cast<ea_t>(member_holder->get_member_offset());
-      die_cache cache;
-
-      try_visit_die(new_die);
-      ok = new_die.get_cache_type(&cache);
-      if(!ok)
-      {
-        // member type not in cache
-        // maybe caused by a forward declaration?
-        *second_pass = true;
-      }
-      else
-      {
-        char const *type_name = get_numbered_type_name(idati, cache.ordinal);
-        type_t const *type = NULL;
-
-        ok = get_numbered_type(idati, cache.ordinal, &type);
-        if(type_name == NULL || !ok)
-        {
-          MSG("cannot get member type from ordinal=%lu\n", cache.ordinal);
-        }
-        else
-        {
-          size_t size = get_type_size0(idati, type);
-
-          if(size == BADSIZE)
-          {
-            MSG("cannot get size of member name='%s'\n", member_name);
-          }
-          else
-          {
-            if(is_type_enum(*type))
-            {
-              enum_t enum_id = getn_enum(cache.ordinal);
-              uval_t serial = get_enum_idx(cache.ordinal);
-              typeinfo_t mt;
-
-              mt.ec.tid = enum_id;
-              mt.ec.serial = serial;
-              add_struc_member(sptr, member_name, moffset, enumflag(), &mt, size);
-            }
-            else if(is_type_struni(*type))
-            {
-              tid_t mstruc_id = get_struc_id(type_name);
-              typeinfo_t mt;
-              int res = 0;
-
-              // override type size (we got an error if we don't do that...)
-              size = get_struc_size(mstruc_id);
-              mt.tid = mstruc_id;
-              res = add_struc_member(sptr, member_name, moffset, struflag(), &mt, size);
-              if(res != 0)
-              {
-                MSG("failed to add struct/union member res=%d name='%s' offset=0x%" DW_PR_DUx "\n",
-                    res, member_name, offset);
-              }
-            }
-            else
-            {
-              add_struc_member(sptr, member_name, moffset, 0, NULL, size);
-              member_t *mptr = get_member_by_name(sptr, member_name);
-              set_member_tinfo(idati, sptr, mptr, 0, type, NULL, 0);
-            }
-
-            DEBUG("adding one member name='%s'\n", member_name);
-          }
-        }
-      }
+      add_structure_member(*iter, sptr, second_pass);
     }
 
     // TODO: how to set the final struct/union size?
@@ -1608,20 +1613,44 @@ void try_visit_die(DieHolder &die_holder)
 
 void do_second_pass(Dwarf_Debug dbg)
 {
-  for(CachedDieIterator iter(dbg);
-      *iter != NULL; ++iter)
+  for(CachedDieIterator cached_iter(dbg);
+      *cached_iter != NULL; ++cached_iter)
   {
-    DieHolder *die_holder = *iter;
+    DieHolder *die_holder = *cached_iter;
     die_cache cache;
-    bool found = die_holder->get_cache(&cache);
+    bool const found = die_holder->get_cache(&cache);
 
+    // this DIE needs a second pass?
     if(found && cache.type == DIE_TYPE && cache.second_pass)
     {
-      if(die_holder->get_tag() == DW_TAG_structure_type)
+      Dwarf_Half const tag = die_holder->get_tag();
+
+      if(tag == DW_TAG_structure_type || tag == DW_TAG_union_type)
       {
         char const *type_name = get_numbered_type_name(idati, cache.ordinal);
+        tid_t struc_id = get_struc_id(type_name);
+        struc_t *sptr = get_struc(struc_id);
+        bool third_pass = false;
 
-        MSG("TODO: struct name='%s' ordinal=%lu needs a second pass\n", type_name, cache.ordinal);
+        for(DieChildIterator child_iter(*die_holder, DW_TAG_member);
+            *child_iter != NULL; ++child_iter)
+        {
+          DieHolder *member_holder = *child_iter;
+          ea_t moffset = static_cast<ea_t>(member_holder->get_member_offset());
+          member_t *member_id = get_member(sptr, moffset);
+
+          // no member at this offset?
+          // TODO: won't work for unions?
+          if(member_id == NULL)
+          {
+            add_structure_member(member_holder, sptr, &third_pass);
+          }
+        }
+
+        if(third_pass)
+        {
+          MSG("TODO: struct name='%s' ordinal=%lu needs a third pass\n", type_name, cache.ordinal);
+        }
       }
     }
   }
