@@ -888,7 +888,7 @@ bool get_simple_type(char const *name, qtype const &ida_type, ulong *ordinal)
   {
     type_t const *type = NULL;
     ulong existing_ordinal = 0;
-    int found = get_named_type(idati, name, NTF_TYPE, &type,
+    int found = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
                              NULL, NULL, NULL, NULL, &existing_ordinal);
 
     // found an existing type with same name?
@@ -1414,7 +1414,8 @@ void process_array(DieHolder &array_holder)
 void process_complete_structure(DieHolder &structure_holder, char const *name,
                                 ulong *ordinal, bool *second_pass)
 {
-  tid_t struc_id = add_struc(BADADDR, name);
+  bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
+  tid_t struc_id = add_struc(BADADDR, name, is_union);
   bool ok = false;
 
   if(struc_id != BADNODE)
@@ -1428,7 +1429,7 @@ void process_complete_structure(DieHolder &structure_holder, char const *name,
       char const *member_name = member_holder->get_name();
       Dwarf_Off const offset = member_holder->get_ref_from_attr(DW_AT_type);
       DieHolder new_die(member_holder->get_dbg(), offset);
-      ea_t moffset = static_cast<ea_t>(member_holder->get_member_offset());
+      ea_t moffset = is_union ? 0 : static_cast<ea_t>(member_holder->get_member_offset());
       die_cache cache;
 
       try_visit_die(new_die);
@@ -1465,7 +1466,7 @@ void process_complete_structure(DieHolder &structure_holder, char const *name,
               mt.ec.serial = serial;
               add_struc_member(sptr, member_name, moffset, enumflag(), &mt, size);
             }
-            else if(is_type_struct(*type))
+            else if(is_type_struni(*type))
             {
               tid_t mstruc_id = get_struc_id(type_name);
               typeinfo_t mt;
@@ -1495,6 +1496,7 @@ void process_structure(DieHolder &structure_holder)
   char const *name = structure_holder.get_name();
   Dwarf_Attribute declaration = structure_holder.get_attr(DW_AT_declaration);
   ulong ordinal = 0;
+  bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
   bool second_pass = false;
 
   // got an incomplete type?
@@ -1507,18 +1509,26 @@ void process_structure(DieHolder &structure_holder)
   }
   else
   {
-    process_complete_structure(structure_holder, name, &ordinal, &second_pass);
+    process_complete_structure(structure_holder, name,
+                               &ordinal, &second_pass);
   }
 
   if(ordinal != 0)
   {
-    DEBUG("added struct name='%s' ordinal=%lu\n", name, ordinal);
+    DEBUG("added %s name='%s' ordinal=%lu\n",
+          is_union ? "union" : "structure", name, ordinal);
     structure_holder.cache_type(ordinal, second_pass);
   }
   else
   {
-    MSG("cannot process structure offset=0x%" DW_PR_DUx "\n",
-        structure_holder.get_offset());
+    // do not print an error for a recursive member
+    if(get_struc_id(name) == BADNODE)
+    {
+      MSG("cannot process %s offset=0x%" DW_PR_DUx "\n",
+          is_union ? "union" : "structure",
+          structure_holder.get_offset());
+    }
+
     structure_holder.cache_useless();
   }  
 }
@@ -1552,6 +1562,7 @@ void visit_die(DieHolder &die_holder)
       process_array(die_holder);
       break;
     case DW_TAG_structure_type:
+    case DW_TAG_union_type:
       process_structure(die_holder);
       break;
     default:
@@ -1625,6 +1636,7 @@ void process_macros(Dwarf_Debug dbg)
           char *value_start = dwarf_find_macro_value_start(macro);
           int res = my_strict_strtol(value_start, &val);
 
+          // TODO: check if it is a function-like macro
           // TODO: a strdup might be better?
           value_start[-1] = '\0';
           if(res == 0)
@@ -1798,7 +1810,9 @@ void idaapi run(GCC_UNUSED int arg)
 
       process_cus(dbg);
       do_second_pass(dbg);
+#if 0
       process_macros(dbg);
+#endif
 
       ret = dwarf_finish(dbg, &err);
       if(ret != DW_DLV_OK)
