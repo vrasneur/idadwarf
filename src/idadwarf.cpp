@@ -105,6 +105,7 @@ class DieException : public exception
 {
 public:
   DieException(char const *file, int const line, Dwarf_Error err, char const *fmt, ...) throw()
+    : m_err(err)
   {
     ostringstream oss;
     va_list ap;
@@ -129,7 +130,13 @@ public:
     return m_msg.c_str();
   }
 
+  Dwarf_Error get_error(void) const throw()
+  {
+    return m_err;
+  }
+
 private:
+  Dwarf_Error m_err;
   string m_msg;
 };
 
@@ -1368,10 +1375,18 @@ void process_array(DieHolder &array_holder)
 
         try
         {
-          size = subrange_holder->get_attr_small_val(DW_AT_upper_bound);
+          // get the array (max) size
+          // TODO: handle DW_AT_count too
+          size = subrange_holder->get_attr_small_val(DW_AT_upper_bound) + 1;
         }
         catch(DieException const &exc)
         {
+          if(exc.get_error() != NULL)
+          {
+            throw;
+          }
+
+          // no size...
           size = 0;
         }
       }
@@ -1411,6 +1426,7 @@ void process_array(DieHolder &array_holder)
   }
 }
 
+// structure/union processing (no incomplete type)
 void process_complete_structure(DieHolder &structure_holder, char const *name,
                                 ulong *ordinal, bool *second_pass)
 {
@@ -1484,6 +1500,21 @@ void process_complete_structure(DieHolder &structure_holder, char const *name,
             DEBUG("adding one member name='%s'\n", member_name);
           }
         }
+      }
+    }
+
+    // try to set the struct/union size
+    try
+    {
+      Dwarf_Unsigned bytesize = structure_holder.get_bytesize();
+
+      sptr->memqty = static_cast<size_t>(bytesize);
+    }
+    catch(DieException const &exc)
+    {
+      if(exc.get_error() != NULL)
+      {
+        throw;
       }
     }
 
