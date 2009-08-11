@@ -470,22 +470,25 @@ public:
 
   void cache_type(ulong const ordinal, bool second_pass=false)
   {
-    die_cache cache;
-    bool do_cache = true;
-
-    // override an useless cache type
-    if(get_cache(&cache) && cache.type != DIE_USELESS)
+    if(ordinal != 0 && ordinal != BADADDR)
     {
-      do_cache = false;
-    }
+      die_cache cache;
+      bool do_cache = true;
 
-    if(do_cache)
-    {
-      cache.type = DIE_TYPE;
-      cache.ordinal = ordinal;
-      cache.second_pass = second_pass;
+      // override an useless cache type
+      if(get_cache(&cache) && cache.type != DIE_USELESS)
+      {
+        do_cache = false;
+      }
 
-      m_dies_node->supset(static_cast<sval_t>(get_offset()), &cache, sizeof(cache));
+      if(do_cache)
+      {
+        cache.type = DIE_TYPE;
+        cache.ordinal = ordinal;
+        cache.second_pass = second_pass;
+
+        m_dies_node->supset(static_cast<sval_t>(get_offset()), &cache, sizeof(cache));
+      }
     }
   }
 
@@ -951,29 +954,12 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal
 // size is in bytes
 static flags_t get_enum_size(Dwarf_Unsigned const size)
 {
-  flags_t flag = 0;
+  flags_t flag = get_flags_by_size(static_cast<size_t>(size));
 
-  switch(size)
+  if(size == 0)
   {
-  case 1:
-    flag = byteflag();
-    break;
-  case 2:
-    flag = wordflag();
-    break;
-  case 4:
-    flag = dwrdflag();
-    break;
-  case 8:
-    flag = qwrdflag();
-    break;
-  case 16:
-    flag = owrdflag();
-    break;
-  default:
     MSG("wrong size for enum (got %" DW_PR_DUu " bytes), assuming 4 bytes...\n", size);
     flag = dwrdflag();
-    break;
   }
 
   return flag;
@@ -1462,7 +1448,11 @@ void process_complete_structure(DieHolder &structure_holder, char const *name,
         type_t const *type = NULL;
 
         ok = get_numbered_type(idati, cache.ordinal, &type);
-        if(type_name != NULL && ok)
+        if(type_name == NULL || !ok)
+        {
+          MSG("cannot get member type from ordinal=%lu\n", cache.ordinal);
+        }
+        else
         {
           size_t size = get_type_size0(idati, type);
 
@@ -1486,9 +1476,17 @@ void process_complete_structure(DieHolder &structure_holder, char const *name,
             {
               tid_t mstruc_id = get_struc_id(type_name);
               typeinfo_t mt;
+              int res = 0;
 
+              // override type size (we got an error if we don't do that...)
+              size = get_struc_size(mstruc_id);
               mt.tid = mstruc_id;
-              add_struc_member(sptr, member_name, moffset, struflag(), &mt, size);
+              res = add_struc_member(sptr, member_name, moffset, struflag(), &mt, size);
+              if(res != 0)
+              {
+                MSG("failed to add struct/union member res=%d name='%s' offset=0x%" DW_PR_DUx "\n",
+                    res, member_name, offset);
+              }
             }
             else
             {
@@ -1503,22 +1501,16 @@ void process_complete_structure(DieHolder &structure_holder, char const *name,
       }
     }
 
-    // try to set the struct/union size
-    try
-    {
-      Dwarf_Unsigned bytesize = structure_holder.get_bytesize();
-
-      sptr->memqty = static_cast<size_t>(bytesize);
-    }
-    catch(DieException const &exc)
-    {
-      if(exc.get_error() != NULL)
-      {
-        throw;
-      }
-    }
+    // TODO: how to set the final struct/union size?
 
     *ordinal = sptr->ordinal;
+
+    if(*ordinal == BADADDR)
+    {
+      MSG("cannot process complete %s offset=0x%" DW_PR_DUx "\n",
+          is_union ? "union" : "structure",
+          structure_holder.get_offset());
+    }
   }
 }
 
