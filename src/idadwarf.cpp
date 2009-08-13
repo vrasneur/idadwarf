@@ -315,7 +315,7 @@ public:
     return offset;
   }
 
-  Dwarf_Small get_member_offset(void)
+  Dwarf_Unsigned get_member_offset(void)
   {
     Dwarf_Attribute attrib = get_attr(DW_AT_data_member_location);
     Dwarf_Locdesc **llbuf = NULL;
@@ -888,7 +888,7 @@ void try_visit_die(DieHolder &die);
 
 // misc IDA utility funs
 
-void get_ordinal_name(qtype &type, ulong const ordinal)
+void append_ordinal_name(qtype &type, ulong const ordinal)
 {
   type.append('#');
   append_de(&type, ordinal);
@@ -907,7 +907,7 @@ void append_complex_type(qtype &new_type, ulong const ordinal)
   qtype complex_type;
   char const *complex_name = NULL;
 
-  get_ordinal_name(complex_type, ordinal);
+  append_ordinal_name(complex_type, ordinal);
   complex_name = reinterpret_cast<char const *>(complex_type.c_str());
   append_name(&new_type, complex_name);
 }
@@ -1353,7 +1353,7 @@ void process_typed_typedef(DieHolder &typedef_holder, ulong type_ordinal)
     {
       qtype old_name;
 
-      get_ordinal_name(old_name, type_ordinal);
+      append_ordinal_name(old_name, type_ordinal);
       rename_named_type(idati, reinterpret_cast<char const *>(old_name.c_str()),
                         name, NTF_TYPE);
       ordinal = type_ordinal;
