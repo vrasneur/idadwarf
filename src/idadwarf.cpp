@@ -1807,6 +1807,40 @@ void try_visit_die(DieHolder &die_holder)
   }
 }
 
+void second_process_structure(DieHolder &structure_holder,
+                              ulong const ordinal)
+{
+  char const *type_name = get_numbered_type_name(idati, ordinal);
+  tid_t struc_id = get_struc_id(type_name);
+  struc_t *sptr = get_struc(struc_id);
+  bool third_pass = false;
+
+  for(DieChildIterator child_iter(structure_holder, DW_TAG_member);
+      *child_iter != NULL; ++child_iter)
+  {
+    DieHolder *member_holder = *child_iter;
+    char const *member_name = member_holder->get_name();
+    member_t *member_id = get_member_by_name(sptr, member_name);
+
+    // no member at this offset?
+    if(member_id == NULL)
+    {
+      add_structure_member(member_holder, sptr, &third_pass);
+    }
+  }
+
+  if(third_pass)
+  {
+    MSG("TODO: struct name='%s' ordinal=%lu needs a third pass\n", type_name, ordinal);
+  }
+}
+
+void second_process_subroutine(GCC_UNUSED DieHolder &subroutine_holder,
+                               GCC_UNUSED ulong const ordinal)
+{
+  // TODO
+}
+
 void do_second_pass(Dwarf_Debug dbg)
 {
   for(CachedDieIterator cached_iter(dbg);
@@ -1821,31 +1855,17 @@ void do_second_pass(Dwarf_Debug dbg)
     {
       Dwarf_Half const tag = die_holder->get_tag();
 
-      if(tag == DW_TAG_structure_type || tag == DW_TAG_union_type)
+      switch(tag)
       {
-        char const *type_name = get_numbered_type_name(idati, cache.ordinal);
-        tid_t struc_id = get_struc_id(type_name);
-        struc_t *sptr = get_struc(struc_id);
-        bool third_pass = false;
-
-        for(DieChildIterator child_iter(*die_holder, DW_TAG_member);
-            *child_iter != NULL; ++child_iter)
-        {
-          DieHolder *member_holder = *child_iter;
-          char const *member_name = member_holder->get_name();
-          member_t *member_id = get_member_by_name(sptr, member_name);
-
-          // no member at this offset?
-          if(member_id == NULL)
-          {
-            add_structure_member(member_holder, sptr, &third_pass);
-          }
-        }
-
-        if(third_pass)
-        {
-          MSG("TODO: struct name='%s' ordinal=%lu needs a third pass\n", type_name, cache.ordinal);
-        }
+      case DW_TAG_structure_type:
+      case DW_TAG_union_type:
+        second_process_structure(*die_holder, cache.ordinal);
+        break;
+      case DW_TAG_subroutine_type:
+        second_process_subroutine(*die_holder, cache.ordinal);
+        break;
+      default:
+        break;
       }
     }
   }
