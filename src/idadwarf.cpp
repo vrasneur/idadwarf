@@ -888,6 +888,51 @@ void try_visit_die(DieHolder &die);
 
 // misc IDA utility funs
 
+void get_ordinal_name(qtype &type, ulong const ordinal)
+{
+  type.append('#');
+  append_de(&type, ordinal);
+}
+
+void append_complex_type(qtype &new_type, qtype const *complex_type)
+{
+  char const *complex_name = NULL;
+
+  complex_name = reinterpret_cast<char const *>(complex_type->c_str());
+  append_name(&new_type, complex_name);
+}
+
+void append_complex_type(qtype &new_type, ulong const ordinal)
+{
+  qtype complex_type;
+  char const *complex_name = NULL;
+
+  get_ordinal_name(complex_type, ordinal);
+  complex_name = reinterpret_cast<char const *>(complex_type.c_str());
+  append_name(&new_type, complex_name);
+}
+
+void make_new_type(qtype &new_type, type_t const *type, ulong const ordinal)
+{
+  type_t const type_header = type[0];
+
+  // use the "'#' + ordinal" name for complex types
+  if(is_type_complex(type_header))
+  {
+    new_type.append(type_header);
+    if(!is_type_typedef(type_header))
+    {
+      append_dt(&new_type, 0);
+    }
+
+    append_complex_type(new_type, ordinal);
+  }
+  else
+  {
+    new_type = type;
+  }
+}
+
 // simple == no fields or C++ class infos
 bool get_simple_type(char const *name, qtype const &ida_type, ulong *ordinal)
 {
@@ -1202,7 +1247,6 @@ bool look_ref_type(DieHolder &modifier_holder, ulong *ordinal)
   return found;
 }
 
-// TODO: handle const arrays correctly!
 void process_typed_modifier(DieHolder &modifier_holder, ulong type_ordinal)
 {
   type_t const *type = NULL;
@@ -1217,33 +1261,21 @@ void process_typed_modifier(DieHolder &modifier_holder, ulong type_ordinal)
   }
   else
   {
-    ulong ordinal = 0;
-    qtype new_type(type);
-    qstring new_name(type_name);
     Dwarf_Half const tag = modifier_holder.get_tag();
+    qtype new_type;
+
+    make_new_type(new_type, type, type_ordinal);
 
     switch(tag)
     {
     case DW_TAG_const_type:
       new_type[0] |= BTM_CONST;
-      new_name.append(" const");
       break;
     case DW_TAG_volatile_type:
       new_type[0] |= BTM_VOLATILE;
-      new_name.append(" volatile");
       break;
     case DW_TAG_pointer_type:
-    {
-#if 0
-      // bytesize is optional and [db sizeof(ptr)] for BT_PTR
-      // appears not to work correctly...
-      Dwarf_Unsigned bytesize = modifier_holder.get_bytesize();
-
-      new_type.before(static_cast<uchar>(bytesize));
-#endif
       new_type.before(BT_PTR);
-      new_name.append(" *");
-    }
     break;
     default:
       MSG("unknown modifier tag %d\n", tag);
@@ -1251,10 +1283,29 @@ void process_typed_modifier(DieHolder &modifier_holder, ulong type_ordinal)
       break;
     }
 
+    // elements from const and volatile arrays must have the same modifiers
+    if(is_type_array(type[0]))
+    {
+      type_t *elem_type = const_cast<type_t *>(skip_array_type_header(new_type.c_str()));
+
+      switch(tag)
+      {
+      case DW_TAG_const_type:
+        elem_type[0] |= BTM_CONST;
+        break;
+      case DW_TAG_volatile_type:
+        elem_type[0] |= BTM_VOLATILE;
+        break;
+      default:
+        break;
+      } 
+    }
+
     if(ok)
     {
-      // TODO: modifier may not always point to a simple type!
-      ok = set_simple_die_type(new_name.c_str(), new_type, &ordinal);
+      ulong ordinal = 0;
+
+      ok = set_simple_die_type(NULL, new_type, &ordinal);
       if(ok)
       {
         DEBUG("added modifier from original type='%s' ordinal=%lu\n", type_name, ordinal);
@@ -1286,7 +1337,7 @@ void process_typed_typedef(DieHolder &typedef_holder, ulong type_ordinal)
 {
   char const *name = typedef_holder.get_name();
   char const *type_name = get_numbered_type_name(idati, type_ordinal);
-  bool ok = false;
+  bool ok = true;
 
   if(type_name == NULL)
   {
@@ -1295,12 +1346,27 @@ void process_typed_typedef(DieHolder &typedef_holder, ulong type_ordinal)
   }
   else
   {
-    qtype new_type;
     ulong ordinal = 0;
 
-    new_type.append(BTF_TYPEDEF);
-    append_name(&new_type, type_name);
-    ok = set_simple_die_type(name, new_type, &ordinal);
+    // typedef for an anonymous type?
+    if(type_name[0] == '\0')
+    {
+      qtype old_name;
+
+      get_ordinal_name(old_name, type_ordinal);
+      rename_named_type(idati, reinterpret_cast<char const *>(old_name.c_str()),
+                        name, NTF_TYPE);
+      ordinal = type_ordinal;
+    }
+    else
+    {
+      type_t const typedef_header = BTF_TYPEDEF;
+      qtype new_type;
+
+      make_new_type(new_type, &typedef_header, type_ordinal);
+      ok = set_simple_die_type(name, new_type, &ordinal);
+    }
+
     if(ok)
     {
       DEBUG("typedef name='%s' original type ordinal=%lu\n", name, ordinal);
@@ -1385,16 +1451,9 @@ void process_array(DieHolder &array_holder)
       }
       else
       {
-        ostringstream new_name;
         ulong ordinal = 0;
 
-        new_name << type_name << '[';
-        if(size > 0)
-        { 
-          new_name << size;
-        }
-        new_name << ']';
-        ok = set_simple_die_type(new_name.str().c_str(), new_type, &ordinal);
+        ok = set_simple_die_type(NULL, new_type, &ordinal);
         if(ok)
         {
           DEBUG("added array from original type='%s' ordinal=%lu\n", type_name, cache.ordinal);
@@ -1428,6 +1487,7 @@ void add_structure_member(DieHolder *member_holder, struc_t *sptr,
   {
     // member type not in cache
     // maybe caused by a forward declaration?
+    // TODO: add an unknown member anyway?
     *second_pass = true;
   }
   else
@@ -1561,6 +1621,139 @@ void process_structure(DieHolder &structure_holder)
   }  
 }
 
+void add_subroutine_parameter(DieHolder *param_holder, qtype &params_type,
+                              bool *second_pass)
+{
+  Dwarf_Off offset = param_holder->get_ref_from_attr(DW_AT_type);
+  DieHolder new_die(param_holder->get_dbg(), offset);
+  type_t const *type = NULL;
+  qtype new_type;
+  die_cache cache;
+  bool ok = false;
+
+  // found die may not be in cache
+  try_visit_die(new_die);
+  ok = new_die.get_cache_type(&cache);
+
+  if(ok)
+  {
+    ok = get_numbered_type(idati, cache.ordinal, &type);
+    if(!ok)
+    {
+      MSG("cannot get parameter type from ordinal=%lu\n", cache.ordinal);
+    }
+  }
+
+  if(!ok)
+  {
+    // maybe caused by the structure being currently processed
+    new_type.append(BT_UNKNOWN);
+    *second_pass = true;
+  }
+  else
+  {
+    make_new_type(new_type, type, cache.ordinal);
+  }
+
+  type = new_type.c_str();
+  params_type.append(type);
+}
+
+void add_subroutine_return(DieHolder &subroutine_holder, qtype &func_type,
+                           bool *second_pass)
+{
+  qtype new_type;
+
+  // no return type?
+  if(subroutine_holder.get_attr(DW_AT_type) == NULL)
+  {
+    // assume the function returns void
+    new_type.append(BTF_VOID);
+  }
+  else
+  {
+    Dwarf_Off offset = subroutine_holder.get_ref_from_attr(DW_AT_type);
+    DieHolder new_die(subroutine_holder.get_dbg(), offset);
+    die_cache cache;
+    bool ok = false;
+
+    // found die may not be in cache
+    try_visit_die(new_die);
+    ok = new_die.get_cache_type(&cache);
+
+    if(ok)
+    {
+      type_t const *type = NULL;
+
+      ok = get_numbered_type(idati, cache.ordinal, &type);
+      if(!ok)
+      {
+        MSG("cannot get return type from ordinal=%lu\n", cache.ordinal);
+      }
+      else
+      {
+        make_new_type(new_type, type, cache.ordinal);
+      }
+    }
+
+    if(!ok)
+    {
+      // we will check again later
+      new_type.append(BT_UNKNOWN);
+      *second_pass = true;
+    }
+  }
+
+  func_type.append(new_type.c_str());
+}
+
+void process_subroutine(DieHolder &subroutine_holder)
+{
+  qtype func_type;
+  qtype params_type;
+  int nb_params = 0;
+  ulong ordinal = 0;
+  bool second_pass = false;
+  bool saved = false;
+
+  func_type.append(BT_FUNC | BTMT_DEFCALL);
+  func_type.append(static_cast<type_t>(CM_UNKNOWN | CM_M_NN));
+
+  // look for the return type
+  add_subroutine_return(subroutine_holder, func_type, &second_pass);
+
+  // look for the parameters types
+  for(DieChildIterator iter(subroutine_holder, DW_TAG_formal_parameter);
+      *iter != NULL; ++iter)
+  {
+    add_subroutine_parameter(*iter, params_type, &second_pass);
+    nb_params++;
+  }
+
+  if(nb_params == 0)
+  {
+    func_type[1] |= CM_CC_VOIDARG;
+  }
+  else
+  {
+    func_type[1] |= CM_CC_UNKNOWN;
+    append_dt(&func_type, nb_params);
+    func_type.append(params_type.c_str());
+  }
+
+  saved = set_simple_die_type(NULL, func_type, &ordinal);
+  if(!saved)
+  {
+    MSG("cannot process function type offset=0x%" DW_PR_DUx "\n",
+      subroutine_holder.get_offset());
+  }
+  else
+  {
+    DEBUG("added function ordinal=%lu\n", ordinal);
+    subroutine_holder.cache_type(ordinal, second_pass);
+  }
+}
+
 void visit_die(DieHolder &die_holder)
 {
   if(!die_holder.in_cache())
@@ -1592,6 +1785,9 @@ void visit_die(DieHolder &die_holder)
     case DW_TAG_structure_type:
     case DW_TAG_union_type:
       process_structure(die_holder);
+      break;
+    case DW_TAG_subroutine_type:
+      process_subroutine(die_holder);
       break;
     default:
       break;
@@ -1636,11 +1832,10 @@ void do_second_pass(Dwarf_Debug dbg)
             *child_iter != NULL; ++child_iter)
         {
           DieHolder *member_holder = *child_iter;
-          ea_t moffset = static_cast<ea_t>(member_holder->get_member_offset());
-          member_t *member_id = get_member(sptr, moffset);
+          char const *member_name = member_holder->get_name();
+          member_t *member_id = get_member_by_name(sptr, member_name);
 
           // no member at this offset?
-          // TODO: won't work for unions?
           if(member_id == NULL)
           {
             add_structure_member(member_holder, sptr, &third_pass);
