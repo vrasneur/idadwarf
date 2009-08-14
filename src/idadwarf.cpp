@@ -1655,8 +1655,7 @@ void add_subroutine_parameter(DieHolder *param_holder, qtype &params_type,
     make_new_type(new_type, type, cache.ordinal);
   }
 
-  type = new_type.c_str();
-  params_type.append(type);
+  params_type.append(new_type);
 }
 
 void add_subroutine_return(DieHolder &subroutine_holder, qtype &func_type,
@@ -1704,7 +1703,7 @@ void add_subroutine_return(DieHolder &subroutine_holder, qtype &func_type,
     }
   }
 
-  func_type.append(new_type.c_str());
+  func_type.append(new_type);
 }
 
 void process_subroutine(DieHolder &subroutine_holder)
@@ -1738,7 +1737,7 @@ void process_subroutine(DieHolder &subroutine_holder)
   {
     func_type[1] |= CM_CC_UNKNOWN;
     append_dt(&func_type, nb_params);
-    func_type.append(params_type.c_str());
+    func_type.append(params_type);
   }
 
   saved = set_simple_die_type(NULL, func_type, &ordinal);
@@ -1835,10 +1834,84 @@ void second_process_structure(DieHolder &structure_holder,
   }
 }
 
-void second_process_subroutine(GCC_UNUSED DieHolder &subroutine_holder,
-                               GCC_UNUSED ulong const ordinal)
+void second_process_subroutine(DieHolder &subroutine_holder,
+                               ulong const ordinal)
 {
-  // TODO
+  type_t const *type = NULL;
+  p_list const *fields = NULL;
+  char const *type_name = get_numbered_type_name(idati, ordinal);
+  bool ok = false;
+
+  ok = get_numbered_type(idati, ordinal, &type, &fields);
+  if(type_name == NULL || !ok)
+  {
+    MSG("cannot get type from ordinal=%lu\n", ordinal);
+    ok = false;
+  }
+  else
+  {
+    func_type_info_t info;
+    int nb_args = build_funcarg_info(idati, type, fields, &info, 0);
+
+    if(nb_args == -1)
+    {
+      MSG("cannot build function arg info ordinal=%lu\n", ordinal);
+      ok = false;
+    }
+    else
+    {
+      qtype func_type;
+      int idx = 0;
+      bool third_pass = false;
+
+      // rebuild the function type, hopefully with no unknown types
+      func_type.append(info.basetype);
+      func_type.append(info.cc);
+
+      if(is_type_unknown(info.rettype[0]))
+      {
+        add_subroutine_return(subroutine_holder, func_type, &third_pass);
+      }
+      else
+      {
+        func_type.append(info.rettype);
+      }
+
+      if(nb_args != 0)
+      {
+        append_dt(&func_type, nb_args);
+      }
+
+      for(DieChildIterator iter(subroutine_holder, DW_TAG_formal_parameter);
+          *iter != NULL; ++iter, ++idx)
+      {
+        qtype param_type;
+
+        if(is_type_unknown(info[idx].type[0]))
+        {
+          add_subroutine_parameter(*iter, param_type, &third_pass);
+        }
+        else
+        {
+          param_type = info[idx].type;
+        }
+
+        func_type.append(param_type);
+      }
+
+      if(third_pass)
+      {
+        MSG("TODO: function ordinal=%lu needs a third pass\n", ordinal);
+      }
+
+      ok = set_numbered_type(idati, ordinal, NTF_REPLACE, type_name, func_type.c_str());
+    }
+  }
+
+  if(!ok)
+  {
+    MSG("failed to do function second pass ordinal=%lu\n", ordinal);
+  }
 }
 
 void do_second_pass(Dwarf_Debug dbg)
