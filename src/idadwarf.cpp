@@ -73,9 +73,10 @@ enum die_type { DIE_USELESS, DIE_TYPE, DIE_VAR };
 
 struct die_cache
 {
-  die_type type;
-  ulong ordinal;
-  bool second_pass;
+  die_type type; // see above
+  ulong ordinal; // type ordinal
+  ulong base_ordinal; // ordinal of the type without any modifiers
+  bool second_pass; // cannot get the complete type
 };
 
 // utility funs
@@ -462,13 +463,13 @@ public:
   {
     if(!in_cache())
     {
-      die_cache cache = { DIE_USELESS, 0, false };
+      die_cache cache = { DIE_USELESS, 0, 0, false };
 
       m_dies_node->supset(static_cast<sval_t>(get_offset()), &cache, sizeof(cache));
     }
   }
 
-  void cache_type(ulong const ordinal, bool second_pass=false)
+  void cache_type(ulong const ordinal, bool second_pass=false, ulong base_ordinal=0)
   {
     if(ordinal != 0 && ordinal != BADADDR)
     {
@@ -485,6 +486,7 @@ public:
       {
         cache.type = DIE_TYPE;
         cache.ordinal = ordinal;
+        cache.base_ordinal = base_ordinal;
         cache.second_pass = second_pass;
 
         m_dies_node->supset(static_cast<sval_t>(get_offset()), &cache, sizeof(cache));
@@ -914,22 +916,42 @@ void append_complex_type(qtype &new_type, ulong const ordinal)
 
 void make_new_type(qtype &new_type, type_t const *type, ulong const ordinal)
 {
-  type_t const type_header = type[0];
-
-  // use the "'#' + ordinal" name for complex types
-  if(is_type_complex(type_header))
+  // without any type, make an 'ordinal' typedef
+  if(type == NULL)
   {
-    new_type.append(type_header);
-    if(!is_type_typedef(type_header))
-    {
-      append_dt(&new_type, 0);
-    }
-
+    new_type.append(BTF_TYPEDEF);
     append_complex_type(new_type, ordinal);
   }
   else
   {
-    new_type = type;
+    type_t const type_header = type[0];
+    char const *type_name = get_numbered_type_name(idati, ordinal);
+
+    // an anonymous typedef or not a complex type?
+    // simply copy the type
+    if(!is_type_complex(type_header) ||
+       (is_type_typedef(type_header) && type_name[0] == '\0'))
+    {
+      new_type = type;
+    }
+    else
+    {
+      new_type.append(type_header);
+      if(!is_type_typedef(type_header))
+      {
+        append_dt(&new_type, 0);
+      }
+
+      append_complex_type(new_type, ordinal);
+    }
+#if 0
+    // TODO: make something better than that...
+    else if(is_type_func(type_header))
+    {
+      new_type.append(BTF_TYPEDEF);
+      append_complex_type(new_type, ordinal);
+    }
+#endif
   }
 }
 
@@ -1191,7 +1213,7 @@ void process_base_type(DieHolder &type_holder)
   }
 }
 
-bool add_unspecified_type(ulong *ordinal)
+bool add_unspecified_type(die_cache *cache)
 {
   qtype type;
   ulong new_ordinal = 0;
@@ -1202,7 +1224,10 @@ bool add_unspecified_type(ulong *ordinal)
   if(saved)
   {
     DEBUG("added unspecified type ordinal=%lu\n", new_ordinal);
-    *ordinal = new_ordinal;
+    cache->type = DIE_USELESS;
+    cache->ordinal = new_ordinal;
+    cache->base_ordinal = 0;
+    cache->second_pass = false;
   }
   else
   {
@@ -1214,42 +1239,39 @@ bool add_unspecified_type(ulong *ordinal)
 
 void process_unspecified(GCC_UNUSED DieHolder &unspecified_holder)
 {
-  ulong ordinal = 0;
+  die_cache cache;
 
-  (void)add_unspecified_type(&ordinal);
+  (void)add_unspecified_type(&cache);
 }
 
-bool look_ref_type(DieHolder &modifier_holder, ulong *ordinal)
+bool look_ref_type(DieHolder &modifier_holder, die_cache *cache)
 {
   bool found = true;
 
   if(modifier_holder.get_attr(DW_AT_type) == NULL)
   {
     // add an unspecified type for modifiers without type attribute
-    found = add_unspecified_type(ordinal);
+    found = add_unspecified_type(cache);
   }
   else
   // need no find the original type?
   {
     Dwarf_Off offset = modifier_holder.get_ref_from_attr(DW_AT_type);
     DieHolder new_die(modifier_holder.get_dbg(), offset);
-    die_cache cache;
 
     // found die may not be in cache
     try_visit_die(new_die);
-    found = new_die.get_cache_type(&cache);
-    if(found)
-    {
-      *ordinal = cache.ordinal;
-    }
+    found = new_die.get_cache_type(cache);
   }
 
   return found;
 }
 
-void process_typed_modifier(DieHolder &modifier_holder, ulong type_ordinal)
+void process_typed_modifier(DieHolder &modifier_holder, die_cache const *cache)
 {
   type_t const *type = NULL;
+  ulong const type_ordinal = cache->ordinal;
+  ulong const base_ordinal = cache->base_ordinal;
   char const *type_name = get_numbered_type_name(idati, type_ordinal);
   bool ok = false;
 
@@ -1264,7 +1286,7 @@ void process_typed_modifier(DieHolder &modifier_holder, ulong type_ordinal)
     Dwarf_Half const tag = modifier_holder.get_tag();
     qtype new_type;
 
-    make_new_type(new_type, type, type_ordinal);
+    make_new_type(new_type, type, base_ordinal ?: type_ordinal);
 
     switch(tag)
     {
@@ -1309,7 +1331,7 @@ void process_typed_modifier(DieHolder &modifier_holder, ulong type_ordinal)
       if(ok)
       {
         DEBUG("added modifier from original type='%s' ordinal=%lu\n", type_name, ordinal);
-        modifier_holder.cache_type(ordinal);
+        modifier_holder.cache_type(ordinal, false, base_ordinal ?: type_ordinal);
       }
     }
   }
@@ -1324,16 +1346,16 @@ void process_typed_modifier(DieHolder &modifier_holder, ulong type_ordinal)
 
 void process_modifier(DieHolder &modifier_holder)
 {
-  ulong ordinal = 0;
-  bool ok = look_ref_type(modifier_holder, &ordinal);
+  die_cache cache;
+  bool ok = look_ref_type(modifier_holder, &cache);
 
   if(ok)
   {
-    process_typed_modifier(modifier_holder, ordinal);
+    process_typed_modifier(modifier_holder, &cache);
   }
 }
 
-void process_typed_typedef(DieHolder &typedef_holder, ulong type_ordinal)
+void process_typed_typedef(DieHolder &typedef_holder, ulong const type_ordinal)
 {
   char const *name = typedef_holder.get_name();
   char const *type_name = get_numbered_type_name(idati, type_ordinal);
@@ -1360,10 +1382,9 @@ void process_typed_typedef(DieHolder &typedef_holder, ulong type_ordinal)
     }
     else
     {
-      type_t const typedef_header = BTF_TYPEDEF;
       qtype new_type;
 
-      make_new_type(new_type, &typedef_header, type_ordinal);
+      make_new_type(new_type, NULL, type_ordinal);
       ok = set_simple_die_type(name, new_type, &ordinal);
     }
 
@@ -1384,12 +1405,12 @@ void process_typed_typedef(DieHolder &typedef_holder, ulong type_ordinal)
 
 void process_typedef(DieHolder &typedef_holder)
 {
-  ulong ordinal = 0;
-  bool ok = look_ref_type(typedef_holder, &ordinal);
+  die_cache cache;
+  bool ok = look_ref_type(typedef_holder, &cache);
 
   if(ok)
   {
-    process_typed_typedef(typedef_holder, ordinal);
+    process_typed_typedef(typedef_holder, cache.ordinal);
   }
 }
 
