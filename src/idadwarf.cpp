@@ -1181,6 +1181,40 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal
   return saved;
 }
 
+// add enum even if its name already exists
+enum_t add_dup_enum(DieHolder &enumeration_holder,
+                    char const *name, flags_t flag)
+{
+  enum_t enum_id = add_enum(BADADDR, name, flag);
+
+  // failed to add?
+  if(enum_id == BADNODE)
+  {
+    qstring new_name(name);
+    EnumCmp::Ptr enum_cmp;
+
+    while(enum_id == BADNODE)
+    {
+      new_name.append('_');
+      enum_cmp.reset(new EnumCmp(new_name.c_str()));
+
+      // check if there is an existing equal enum
+      // with the same new name
+      if(enum_cmp.get() != NULL &&
+         enum_cmp->equal(enumeration_holder))
+      {
+        enum_id = enum_cmp->get_enum_id();
+      }
+      else
+      {
+        enum_id = add_enum(BADADDR, new_name.c_str(), flag);
+      }
+    }
+  }
+
+  return enum_id;
+}
+
 // DIE processing begins here
 
 // size is in bytes
@@ -1226,7 +1260,7 @@ void process_enum(DieHolder &enumeration_holder)
     // bytesize is mandatory
     Dwarf_Unsigned byte_size = enumeration_holder.get_bytesize();
 
-    enum_id = add_enum(BADADDR, name, get_enum_size(byte_size));
+    enum_id = add_dup_enum(enumeration_holder, name, get_enum_size(byte_size));
     DEBUG("added an enum name='%s' bytesize=%" DW_PR_DUu "\n", name, byte_size);
 
     for(DieChildIterator iter(enumeration_holder, DW_TAG_enumerator);
@@ -1604,7 +1638,7 @@ void process_array(DieHolder &array_holder)
     else
     {
       DieChildIterator iter(array_holder, DW_TAG_subrange_type);
-      qtype new_type = NULL;
+      qtype new_type;
       Dwarf_Signed size = 0;
 
       if(*iter != NULL)
@@ -2208,8 +2242,8 @@ void update_ptr_types(Dwarf_Debug dbg)
           type_pair_t type_pair(base_type, func_type);
           type_pair_vec_t vector_pair;
           // backup used when old type is replaced
-          qtype const old_type = type;
-          qtype new_type = type;
+          qtype const old_type(type);
+          qtype new_type(type);
 
           vector_pair.push_back(type_pair);
           replace_subtypes(new_type, vector_pair);
