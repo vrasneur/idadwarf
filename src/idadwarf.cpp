@@ -1799,6 +1799,7 @@ void process_complete_structure(DieHolder &structure_holder, char const *name,
   }
 }
 
+// TODO: handle bitfields
 void process_structure(DieHolder &structure_holder)
 {
   char const *name = structure_holder.get_name();
@@ -1926,6 +1927,7 @@ void add_subroutine_return(DieHolder &subroutine_holder, qtype &func_type,
   func_type.append(new_type);
 }
 
+// TODO: handle ellipsis parameter
 void process_subroutine(DieHolder &subroutine_holder)
 {
   qtype func_type;
