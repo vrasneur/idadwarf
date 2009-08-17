@@ -1191,19 +1191,17 @@ enum_t add_dup_enum(DieHolder &enumeration_holder,
   if(enum_id == BADNODE)
   {
     qstring new_name(name);
-    EnumCmp::Ptr enum_cmp;
 
     while(enum_id == BADNODE)
     {
       new_name.append('_');
-      enum_cmp.reset(new EnumCmp(new_name.c_str()));
+      EnumCmp enum_cmp(new_name.c_str());
 
       // check if there is an existing equal enum
       // with the same new name
-      if(enum_cmp.get() != NULL &&
-         enum_cmp->equal(enumeration_holder))
+      if(enum_cmp.equal(enumeration_holder))
       {
-        enum_id = enum_cmp->get_enum_id();
+        enum_id = enum_cmp.get_enum_id();
       }
       else
       {
