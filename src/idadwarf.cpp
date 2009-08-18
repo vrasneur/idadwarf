@@ -1266,7 +1266,7 @@ bool get_simple_type(char const *name, qtype const &ida_type, ulong *ordinal)
     type_t const *type = NULL;
     ulong existing_ordinal = 0;
     int found = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
-                             NULL, NULL, NULL, NULL, &existing_ordinal);
+                               NULL, NULL, NULL, NULL, &existing_ordinal);
 
     // found an existing type with same name?
     if(found != 0)
@@ -1284,7 +1284,7 @@ bool get_simple_type(char const *name, qtype const &ida_type, ulong *ordinal)
   return ret;
 }
 
-bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal)
+bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal, bool const replace=false)
 {
   ulong alloced_ordinal = 0;
   bool saved = get_simple_type(name, ida_type, &alloced_ordinal);
@@ -1293,11 +1293,11 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal
   {
     qstring new_name(name);
 
-    alloced_ordinal = alloc_type_ordinal(idati);
+    alloced_ordinal = *ordinal ?: alloc_type_ordinal(idati);
 
     while(!saved)
     {
-      saved = set_numbered_type(idati, alloced_ordinal, 0, new_name.c_str(), ida_type.c_str());
+      saved = set_numbered_type(idati, alloced_ordinal, replace ? NTF_REPLACE : 0, new_name.c_str(), ida_type.c_str());
       if(!saved)
       {
         // try an approx name to avoid collision
@@ -1372,7 +1372,7 @@ tid_t add_dup_struc(DieHolder &structure_holder, char const *name)
       }
       else
       {
-        struc_id = add_enum(BADADDR, new_name.c_str(), is_union);
+        struc_id = add_struc(BADADDR, new_name.c_str(), is_union);
       }
     }
   }
@@ -1737,12 +1737,23 @@ void process_typed_typedef(DieHolder &typedef_holder, ulong const type_ordinal)
     // typedef for an anonymous type?
     if(type_name[0] == '\0')
     {
-      qtype old_name;
+      // there is no NTF_NOBASE support in rename_named_type
+      // I need to do everything my way...
+      type_t const *type = NULL;
+      // there should be no complex types with an anonymous name
+      // so, we can simply get the type here, not the fields
+      ok = get_numbered_type(idati, type_ordinal, &type);
+      if(ok)
+      {
+        qtype new_type(type);
 
-      append_ordinal_name(old_name, type_ordinal);
-      rename_named_type(idati, reinterpret_cast<char const *>(old_name.c_str()),
-                        name, NTF_TYPE);
-      ordinal = type_ordinal;
+        ok = del_numbered_type(idati, type_ordinal);
+        if(ok)
+        {
+          ordinal = type_ordinal;
+          ok = set_simple_die_type(name, new_type, &ordinal, true);
+        }
+      }
     }
     else
     {
@@ -1973,19 +1984,41 @@ tid_t get_other_structure(DieHolder &structure_holder, char const *name,
   return struc_id;
 }
 
+// maybe add a new structure
+// and find the declaration ordinal if existing
+tid_t decl_add_struc(char const *name, bool const is_union,
+                     ulong *decl_ordinal)
+{
+  if(name != NULL)
+  {
+    ulong ordinal = 0;
+    type_t const *type = NULL;
+    bool ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
+                             NULL, NULL, NULL, NULL, &ordinal);
+    if(ok && is_type_void(type[0]))
+    {
+      *decl_ordinal = ordinal;
+    }
+  }
+
+  return add_struc(BADADDR, name, is_union);
+}
+
 // structure/union processing (no incomplete type)
 void process_complete_structure(DieHolder &structure_holder, char const *name,
                                 ulong *ordinal, bool *second_pass)
 {
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
-  tid_t struc_id = add_struc(BADADDR, name, is_union);
+  ulong decl_ordinal = 0;
+  tid_t struc_id = decl_add_struc(name, is_union, &decl_ordinal);
 
   if(struc_id == BADNODE)
   {
     struc_id = get_other_structure(structure_holder, name, ordinal);
   }
 
-  if(struc_id != BADNODE)
+  // handle only newly added struct/unions
+  if(*ordinal == 0 && struc_id != BADNODE)
   {
     struc_t *sptr = get_struc(struc_id);
 
@@ -2004,6 +2037,10 @@ void process_complete_structure(DieHolder &structure_holder, char const *name,
       MSG("cannot process complete %s offset=0x%" DW_PR_DUx "\n",
           is_union ? "union" : "structure",
           structure_holder.get_offset());
+    }
+    else if(decl_ordinal != 0)
+    {
+      set_type_alias(idati, decl_ordinal, *ordinal);
     }
   }
 }
