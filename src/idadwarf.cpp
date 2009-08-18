@@ -1252,14 +1252,6 @@ void make_new_type(qtype &new_type, type_t const *type, ulong const ordinal)
 
       append_complex_type(new_type, ordinal);
     }
-#if 0
-    // TODO: make something better than that...
-    else if(is_type_func(type_header))
-    {
-      new_type.append(BTF_TYPEDEF);
-      append_complex_type(new_type, ordinal);
-    }
-#endif
   }
 }
 
