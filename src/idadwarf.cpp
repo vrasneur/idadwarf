@@ -193,12 +193,18 @@ public:
     return ret;
   }
 
+  bool get_offset(ulong const ordinal, Dwarf_Off *offset) throw()
+  {
+    ssize_t const size = m_dies_node.supval(static_cast<sval_t>(ordinal), offset,
+                                            sizeof(*offset), atag);
+
+    return (size != -1);
+  }
+
   bool get_cache_by_ordinal(ulong const ordinal, die_cache *cache) throw()
   {
     Dwarf_Off offset = 0;
-    ssize_t size = m_dies_node.supval(static_cast<sval_t>(ordinal), &offset,
-                                      sizeof(offset), atag);
-    bool found = (size != -1);
+    bool found = get_offset(ordinal, &offset);
 
     if(found)
     {
@@ -363,7 +369,9 @@ public:
     return m_dbg;
   }
 
-  char *get_name(void)
+  // warning: this is the real DIE name, not the one in idati!
+  // these 2 names might be different if there was a conflict
+  char const *get_name(void)
   {
     if(m_name == NULL)
     {
@@ -971,7 +979,7 @@ public:
           *iter != NULL; ++iter)
       {
         DieHolder *child_holder = *iter;
-        char *child_name = NULL;
+        char const *child_name = NULL;
         Dwarf_Signed value = 0;
 
         child_name = child_holder->get_name();
@@ -1002,21 +1010,24 @@ private:
   virtual int visit_const(const_t cid, uval_t value) throw()
   {
     int ret = 1;
-    ssize_t len =  get_const_name(cid, NULL, 0);
+    // '\0' character is included in len
+    ssize_t len = get_const_name(cid, NULL, 0);
 
     if(len != -1)
     {
       char *buf = static_cast<char *>(qalloc(len));
-
-      (void)get_const_name(cid, buf, len);
-      m_consts[buf] = value;
-      ret = 0;
+      if(buf != NULL)
+      {
+        (void)get_const_name(cid, buf, len);
+        m_consts[buf] = value;
+        ret = 0;
+      }
     }
 
     return ret;
   }
 
-  bool find(char const *name, uval_t value)
+  bool find(char const *name, uval_t const value)
   {
     bool ret = false;
     MapConsts::iterator iter = m_consts.find(name);
@@ -1031,6 +1042,138 @@ private:
     }
 
     return ret;
+  }
+};
+
+// struct/union comparison
+// we consider 2 structures equal if they have the same (processed) member
+// names at the same offset
+// we consider 2 unions equal if they have the same (processed) member names
+// TODO: might be possible to do some member typechecking? (difficult)
+class StrucCmp
+{
+public:
+  StrucCmp(tid_t struc_id) throw():
+    m_struc_id(struc_id), m_is_union(false)
+  {
+    if(struc_id != BADNODE)
+    {
+      m_is_union = is_union(struc_id);
+
+      add_all_members();
+    }
+  }
+
+  StrucCmp(char const *struc_name) throw()
+    : m_struc_id(BADNODE), m_is_union(false)
+  {
+    // find a struct/union by its (non null) name
+    if(struc_name != NULL)
+    {
+      m_struc_id = ::get_struc_id(struc_name);
+
+      if(m_struc_id != BADNODE)
+      {
+        m_is_union = is_union(m_struc_id);
+
+        add_all_members();
+      }
+    }
+  }
+
+  virtual ~StrucCmp(void) throw()
+  {
+    while(!m_members.empty())
+    {
+      MapMembers::iterator iter = m_members.begin();
+      char *str = const_cast<char *>(iter->first);
+
+      m_members.erase(iter);
+      qfree(str), str = NULL;
+    }
+  }
+
+  tid_t get_struc_id(void) const throw()
+  {
+    return m_struc_id;
+  }
+
+  bool equal(DieHolder &structure_holder)
+  {
+    bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
+    bool ret = false;
+
+    if(!m_members.empty() &&
+       m_is_union == is_union &&
+       m_struc_id != BADNODE)
+    {
+      for(DieChildIterator iter(structure_holder, DW_TAG_member);
+          *iter != NULL; ++iter)
+      {
+        DieHolder *member_holder =  *iter;
+        char const *member_name = member_holder->get_name();
+        ea_t moffset = m_is_union ? 0 : static_cast<ea_t>(member_holder->get_member_offset());
+
+        // continue even if the name is not erased
+        try_erase(member_name, moffset);
+      }
+
+      ret = m_members.empty();
+    }
+
+    return ret;
+  }
+
+private:
+  tid_t m_struc_id;
+  bool m_is_union;
+  // (unique) member name, member offset (0 for unions)
+  typedef map<char const *, ea_t, less_strcmp> MapMembers;
+  MapMembers m_members;
+
+  void add_all_members(void) throw()
+  {
+    if(m_struc_id != BADNODE)
+    {
+      struc_t *sptr = get_struc(m_struc_id);
+      ssize_t const struc_len = get_struc_name(m_struc_id, NULL, 0);
+
+      for(size_t idx = 0; idx < sptr->memqty; ++idx)
+      {
+        member_t *mptr = &(sptr->members[idx]);
+
+        // get_member_name crashes when given a NULL pointer...
+        // we need to get the "struct.field" name and
+        // substract the "struct." part
+        // len is without the '\0' character
+        ssize_t len = get_member_fullname(mptr->id, NULL, 0);
+
+        if(len != -1)
+        {
+          len -= struc_len;
+
+          char *buf = static_cast<char *>(qalloc(len));
+          if(buf != NULL)
+          {
+            (void)get_member_name(mptr->id, buf, len);
+            m_members[buf] = m_is_union ? 0 : mptr->soff;
+          }
+        }
+      }
+    }
+  }
+
+  void try_erase(char const *name, ea_t const offset)
+  {
+    MapMembers::iterator iter = m_members.find(name);
+
+    if(iter != m_members.end() && iter->second == offset)
+    {
+      char *str = const_cast<char *>(iter->first);
+
+      m_members.erase(iter);
+      qfree(str), str = NULL;
+    }
   }
 };
 
@@ -1181,7 +1324,7 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal
   return saved;
 }
 
-// add enum even if its name already exists
+// add an enum even if its name already exists
 enum_t add_dup_enum(DieHolder &enumeration_holder,
                     char const *name, flags_t flag)
 {
@@ -1211,6 +1354,38 @@ enum_t add_dup_enum(DieHolder &enumeration_holder,
   }
 
   return enum_id;
+}
+
+// add a struct/union even if its name already exists
+tid_t add_dup_struc(DieHolder &structure_holder, char const *name)
+{
+  bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
+  tid_t struc_id = add_struc(BADADDR, name, is_union);
+
+  // failed to add?
+  if(struc_id == BADNODE)
+  {
+    qstring new_name(name);
+
+    while(struc_id == BADNODE)
+    {
+      new_name.append('_');
+      StrucCmp struc_cmp(new_name.c_str());
+
+      // check if there is an existing equal struct/union
+      // with the same new name
+      if(struc_cmp.equal(structure_holder))
+      {
+        struc_id = struc_cmp.get_struc_id();
+      }
+      else
+      {
+        struc_id = add_enum(BADADDR, new_name.c_str(), is_union);
+      }
+    }
+  }
+
+  return struc_id;
 }
 
 // DIE processing begins here
@@ -1265,7 +1440,7 @@ void process_enum(DieHolder &enumeration_holder)
         *iter != NULL; ++iter)
     {
       DieHolder *child_holder = *iter;
-      char *child_name = NULL;
+      char const *child_name = NULL;
       Dwarf_Signed value = 0;
 
       child_name = child_holder->get_name();
@@ -1283,7 +1458,7 @@ void process_enum(DieHolder &enumeration_holder)
 void process_base_type(DieHolder &type_holder)
 {
   // mandatory name for a base type
-  char *name = type_holder.get_name();
+  char const *name = type_holder.get_name();
   Dwarf_Unsigned byte_size = type_holder.get_bytesize();
   Dwarf_Signed encoding = type_holder.get_attr_small_val(DW_AT_encoding);
   bool saved = false;
@@ -1311,7 +1486,7 @@ void process_base_type(DieHolder &type_holder)
       ida_type[0] |= BTMT_BOOL4;
       break;
     default:
-      msg("base type: unknown boolean size %" DW_PR_DUu ", assuming size is model specific\n", byte_size);
+      msg("base type: unknown boolean size=%" DW_PR_DUu ", assuming size is model specific\n", byte_size);
       ida_type[0] |= BTMT_DEFBOOL;
       break;
     }
@@ -1336,7 +1511,7 @@ void process_base_type(DieHolder &type_holder)
       ida_type[0] |= BTMT_LNGDBL;
       break;
     default:
-      msg("unknown float byte size %" DW_PR_DUu "\n", byte_size);
+      msg("unknown float byte size=%" DW_PR_DUu "\n", byte_size);
       break;
     }
     break;
@@ -1366,7 +1541,7 @@ void process_base_type(DieHolder &type_holder)
       ida_type[0] |= BT_INT128;
       break;
     default:
-      msg("unknown byte size %" DW_PR_DUu ", assuming natural int\n", byte_size);
+      msg("unknown byte size=%" DW_PR_DUu ", assuming natural int\n", byte_size);
       ida_type[0] |= BT_INT;
       break;
     }
@@ -1382,7 +1557,7 @@ void process_base_type(DieHolder &type_holder)
     ida_type[0] |= BT_INT8 | BTMT_CHAR;
     if(byte_size != 1)
     {
-      msg("got a char with bte size %" DW_PR_DUu " (!= 1), assuming 1 anyway...\n", byte_size);
+      msg("got a char with bte size=%" DW_PR_DUu " (!= 1), assuming 1 anyway...\n", byte_size);
     }
     break;
   default:
@@ -1767,12 +1942,56 @@ void add_structure_member(DieHolder *member_holder, struc_t *sptr,
   }
 }
 
+// find if the struct/union being processed is the copy of another one
+tid_t get_other_structure(DieHolder &structure_holder, char const *name,
+                          ulong *ordinal)
+{
+  tid_t struc_id = BADNODE;
+  tid_t other_id = get_struc_id(name);
+  struc_t *sptr = get_struc(other_id);
+
+  if(sptr != NULL)
+  {
+    ulong const other_ordinal = static_cast<ulong>(sptr->ordinal);
+
+    if(other_ordinal != 0 && other_ordinal != BADADDR)
+    {
+      Dwarf_Off const offset = structure_holder.get_offset();
+      Dwarf_Off other_offset = 0;
+      bool const ok = diecache.get_offset(other_ordinal, &other_offset);
+
+      // not the same offsets => different structures
+      if(ok && offset != other_offset)
+      {
+        StrucCmp struc_cmp(name);
+
+        if(struc_cmp.equal(structure_holder))
+        {
+          *ordinal = other_ordinal;
+        }
+        else
+        {
+          // generate a new name for the struct/union
+          struc_id = add_dup_struc(structure_holder, name);
+        }
+      }
+    }
+  }
+
+  return struc_id;
+}
+
 // structure/union processing (no incomplete type)
 void process_complete_structure(DieHolder &structure_holder, char const *name,
                                 ulong *ordinal, bool *second_pass)
 {
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
   tid_t struc_id = add_struc(BADADDR, name, is_union);
+
+  if(struc_id == BADNODE)
+  {
+    struc_id = get_other_structure(structure_holder, name, ordinal);
+  }
 
   if(struc_id != BADNODE)
   {
