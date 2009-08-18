@@ -911,6 +911,7 @@ public:
     : m_enum_id(enum_id)
   {
     // find the enum by its id
+    // should only be used for debug purpose
     if(m_enum_id != BADNODE)
     {
       for_all_consts(m_enum_id, *this);
@@ -1056,6 +1057,8 @@ public:
   StrucCmp(tid_t struc_id) throw():
     m_struc_id(struc_id), m_is_union(false)
   {
+    // find a struct/union by its id
+    // should only be used for debug purpose
     if(struc_id != BADNODE)
     {
       m_is_union = is_union(struc_id);
@@ -1752,6 +1755,11 @@ void process_typed_typedef(DieHolder &typedef_holder, ulong const type_ordinal)
         {
           ordinal = type_ordinal;
           ok = set_simple_die_type(name, new_type, &ordinal, true);
+          // make the deleted type refer to the typedef type
+          if(ok && type_ordinal != ordinal)
+          {
+            set_type_alias(idati, type_ordinal, ordinal);
+          }
         }
       }
     }
@@ -1993,7 +2001,7 @@ tid_t decl_add_struc(char const *name, bool const is_union,
   {
     ulong ordinal = 0;
     type_t const *type = NULL;
-    bool ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
+    bool const ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
                              NULL, NULL, NULL, NULL, &ordinal);
     if(ok && is_type_void(type[0]))
     {
