@@ -242,25 +242,41 @@ public:
     if(ordinal != 0 && ordinal != BADADDR)
     {
       die_cache cache;
-      bool do_cache = true;
+      Dwarf_Off orig_offset = 0;
+      bool ok = get_offset(ordinal, &orig_offset);
 
-      // override an useless cache type
-      if(get_cache(offset, &cache) && cache.type != DIE_USELESS)
+      // already a DIE with the same ordinal in cache?
+      if(ok && orig_offset != offset)
       {
-        do_cache = false;
+        ok = get_cache(orig_offset, &cache);
+        if(ok)
+        {
+          nodeidx_t const offset_idx = static_cast<nodeidx_t>(offset);
+
+          // set the same cache infos
+          // but don't touch the ordinal -> offset mapping!
+          m_dies_node.supset(offset_idx, &cache, sizeof(cache));
+        }
       }
-
-      if(do_cache)
+      else
       {
-        nodeidx_t const offset_idx = static_cast<nodeidx_t>(offset);
+        // is there already an useless cache, overrride it
+        if(get_cache(offset, &cache) && cache.type != DIE_USELESS)
+        {
+          DEBUG("do not do cache for ordinal %lu\n", ordinal);
+        }
+        else
+        {
+          nodeidx_t const offset_idx = static_cast<nodeidx_t>(offset);
 
-        cache.type = DIE_TYPE;
-        cache.ordinal = ordinal;
-        cache.base_ordinal = base_ordinal;
-        cache.second_pass = second_pass;
+          cache.type = DIE_TYPE;
+          cache.ordinal = ordinal;
+          cache.base_ordinal = base_ordinal;
+          cache.second_pass = second_pass;
 
-        m_dies_node.supset(offset_idx, &cache, sizeof(cache));
-        m_dies_node.altset(static_cast<sval_t>(ordinal), offset_idx);
+          m_dies_node.supset(offset_idx, &cache, sizeof(cache));
+          m_dies_node.altset(static_cast<sval_t>(ordinal), offset_idx);
+        }
       }
     }
   }
@@ -1259,21 +1275,28 @@ void make_new_type(qtype &new_type, type_t const *type, ulong const ordinal)
 }
 
 // simple == no fields or C++ class infos
-bool get_simple_type(char const *name, qtype const &ida_type, ulong *ordinal)
+// returns true => the same type with the same name already exists
+bool find_simple_type(char const *name, qtype const &ida_type, ulong *ordinal,
+                     bool *found)
 {
   bool ret = false;
+
+  // reset the found status
+  *found = false;
 
   // don't look for an anonymous type in the database
   if(name != NULL)
   {
     type_t const *type = NULL;
     ulong existing_ordinal = 0;
-    int found = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
+    int ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
                                NULL, NULL, NULL, NULL, &existing_ordinal);
 
     // found an existing type with same name?
-    if(found != 0)
+    if(ok != 0)
     {
+      *found = true;
+
       // TODO: check if the found type is really simple
       // same name, same type_t?
       if(typcmp(type, ida_type.c_str()) == 0)
@@ -1281,16 +1304,21 @@ bool get_simple_type(char const *name, qtype const &ida_type, ulong *ordinal)
         *ordinal = existing_ordinal;
         ret = true;
       }
+
     }
   }
 
   return ret;
 }
 
-bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal, bool const replace=false)
+// set the name and type for a (not struct/union or enum) DIE type
+// if *ordinal is not 0, do a type replace
+bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal)
 {
   ulong alloced_ordinal = 0;
-  bool saved = get_simple_type(name, ida_type, &alloced_ordinal);
+  bool found = false;
+  bool saved = find_simple_type(name, ida_type, &alloced_ordinal, &found);
+  bool const replace = (*ordinal != 0);
 
   if(!saved)
   {
@@ -1300,13 +1328,23 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal
 
     while(!saved)
     {
-      saved = set_numbered_type(idati, alloced_ordinal, replace ? NTF_REPLACE : 0, new_name.c_str(), ida_type.c_str());
+      // if the name already exists in the db,
+      // the old type name will get deleted (if we replace the type)
+      // avoid that!
+      if(!found)
+      {
+        saved = set_numbered_type(idati, alloced_ordinal,
+                                  replace ? NTF_REPLACE : 0,
+                                  new_name.c_str(), ida_type.c_str());
+      }
+
       if(!saved)
       {
         // try an approx name to avoid collision
         new_name.append('_');
         // look if a type with same name exists for the new generated name
-        saved = get_simple_type(new_name.c_str(), ida_type, &alloced_ordinal);
+        saved = find_simple_type(new_name.c_str(), ida_type,
+                                 &alloced_ordinal, &found);
       }
     }
   }
@@ -1754,7 +1792,7 @@ void process_typed_typedef(DieHolder &typedef_holder, ulong const type_ordinal)
         if(ok)
         {
           ordinal = type_ordinal;
-          ok = set_simple_die_type(name, new_type, &ordinal, true);
+          ok = set_simple_die_type(name, new_type, &ordinal);
           // make the deleted type refer to the typedef type
           if(ok && type_ordinal != ordinal)
           {
@@ -2489,30 +2527,36 @@ void update_ptr_types(Dwarf_Debug dbg)
       if(ok && is_type_func(func_type[0]))
       {
         die_cache func_cache;
+        char const *type_name = get_numbered_type_name(idati, cache->ordinal);
         ok = diecache.get_cache_by_ordinal(cache->base_ordinal, &func_cache);
 
         // pointer to an "unknown" function?
-        if(ok && func_cache.second_pass)
+        if(ok && type_name != NULL && func_cache.second_pass)
         {
           type_t const *base_type = get_ptrs_base_type(type);
           type_pair_t type_pair(base_type, func_type);
           type_pair_vec_t vector_pair;
           // backup used when old type is replaced
           qtype const old_type(type);
+          qstring const old_name(type_name);
           qtype new_type(type);
 
           vector_pair.push_back(type_pair);
           replace_subtypes(new_type, vector_pair);
 
-          // TODO: NULL for type_name is ok?
-          ok = set_numbered_type(idati, cache->ordinal, NTF_REPLACE, NULL, new_type.c_str());
+          ok = del_numbered_type(idati, cache->ordinal);
           if(ok)
           {
-            DEBUG("pointer type changed ordinal=%lu\n", cache.ordinal);
+            // we replace a pointer type, so we only need the type_t, not the fields
+            ok = set_numbered_type(idati, cache->ordinal, NTF_REPLACE, old_name.c_str(), new_type.c_str());
+            if(ok)
+            {
+              DEBUG("pointer type changed ordinal=%lu\n", cache.ordinal);
 
-            // propagate the new type in the aggregate types
-            update_structure_member(dbg, DW_TAG_structure_type, old_type, new_type);
-            update_structure_member(dbg, DW_TAG_union_type, old_type, new_type);
+              // propagate the new type in the aggregate types
+              update_structure_member(dbg, DW_TAG_structure_type, old_type, new_type);
+              update_structure_member(dbg, DW_TAG_union_type, old_type, new_type);
+            }
           }
         }
       }
@@ -2520,7 +2564,14 @@ void update_ptr_types(Dwarf_Debug dbg)
 
     if(!ok)
     {
+      Dwarf_Off offset = 0;
+
       MSG("failed to update pointer type ordinal=%lu\n", cache->ordinal);
+      ok = diecache.get_offset(cache->ordinal, &offset);
+      if(ok)
+      {
+        MSG("-> at offset=0x%" DW_PR_DUx "\n", offset);
+      }
     }
   }
 }
