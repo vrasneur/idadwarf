@@ -17,6 +17,9 @@ DEPSDIR := deps
 # include paths for IDA sdk, libelf and libdwarf
 # you can keep the default value
 INCLUDES := $(IDAINC) $(DEPSDIR)/include
+# where to put the plugin when doing a dist
+# you can keep the default value
+DISTDIR := ../bin
 
 # predicate functions
 inpath = $(shell which $(1) >/dev/null 2>&1; echo $$?)
@@ -52,7 +55,7 @@ OBJS := $(addsuffix .o,$(STEMS))
 
 $(shell mkdir -p $(ABSDEPSDIR))
 
-.PHONY: clean cleandeps distclean install test
+.PHONY: clean cleandeps distclean dist install test 
 
 all: $(LIBELF) $(LIBDWARF) $(BIN)
 
@@ -91,6 +94,9 @@ install: all $(IDADIR)
 
 test: install
 	-wine $(IDADIR)/idag.exe&
+
+dist: $(BIN)
+	cp $< $(DISTDIR)
 
 distclean: clean cleandeps
 
