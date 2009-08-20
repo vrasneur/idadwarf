@@ -1,5 +1,5 @@
-#ifndef GCC_DEFS_H
-#define GCC_DEFS_H
+#ifndef GCC_DEFS_HPP
+#define GCC_DEFS_HPP
 
 #if __GNUC__ >= 3
 # define GCC_INLINE       inline __attribute__ ((always_inline))
@@ -40,4 +40,4 @@
 # define unlikely(x)      (x)
 #endif
 
-#endif // GCC_DEFS_H
+#endif // GCC_DEFS_HPP

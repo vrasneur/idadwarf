@@ -39,13 +39,16 @@ $(call check,inpath,$(CC),compiler not in your path)
 $(call check,isdir,$(IDAINC),IDA SDK include path not found)
 $(call check,isfile,$(IDALIB),IDA library not found)
 
-CFLAGS = -std=gnu++98 -Wall -Wextra -Wformat=2 -Wold-style-cast -Wcast-qual -Wcast-align -D__NT__ -D__IDP__ -Wl,--dll -shared -mno-cygwin
+CFLAGS = -std=gnu++98 -Wall -Wextra -Wformat=2 -Wold-style-cast -Wcast-qual -Wcast-align -D__NT__ -D__IDP__
 ifeq ($(DEBUG),)
 CFLAGS += -DNDEBUG
 endif
 
+LIBS := -Wl,--dll -shared -mno-cygwin
 MACHINE := $(strip $(shell $(CC) -dumpmachine))
 BIN := idadwarf.plw
+STEMS := ida_utils die_cache die_utils iterators type_retrieval idadwarf
+OBJS := $(addsuffix .o,$(STEMS))
 
 $(shell mkdir -p $(ABSDEPSDIR))
 
@@ -77,8 +80,11 @@ $(LIBDWARF): $(DWARFDIR)
 	CPPFLAGS="-I$(ABSDEPSDIR)/include" LDFLAGS="-L$(ABSDEPSDIR)/lib",\
 	--enable-nonshared,libdwarf.a install)
 
-$(BIN): %.plw: %.cpp utils.h gcc_defs.h
-	$(CC) $(CFLAGS) $(addprefix -I,$(INCLUDES)) -L$(LIBDIR) $< -o $@ $(IDALIB) -ldwarf -lelf
+$(OBJS): %.o: %.cpp
+	$(CC) $(CFLAGS) -c $< $(addprefix -I,$(INCLUDES))
+
+$(BIN): $(OBJS)
+	$(CC) -L$(LIBDIR) $^ -o $@ $(LIBS) $(IDALIB) -ldwarf -lelf
 
 install: all $(IDADIR)
 	cp $(BIN) $(IDADIR)/plugins
@@ -89,7 +95,7 @@ test: install
 distclean: clean cleandeps
 
 clean:
-	-rm -f $(BIN) *~
+	-rm -f $(BIN) $(OBJS) *.gch *~
 
 cleandeps:
 	-$(call test,isfile,$(ELFDIR)/Makefile,make -C $(ELFDIR) distclean)

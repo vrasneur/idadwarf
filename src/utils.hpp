@@ -1,5 +1,5 @@
-#ifndef IDADWARF_UTILS_H
-#define IDADWARF_UTILS_H
+#ifndef IDADWARF_UTILS_HPP
+#define IDADWARF_UTILS_HPP
 
 #include <cstdlib>
 #include <cerrno>
@@ -50,4 +50,4 @@ static inline int my_strict_strtol(char const *str, long *nb)
    return ret;
 }
 
-#endif // IDADWARF_UTILS_H
+#endif // IDADWARF_UTILS_HPP
