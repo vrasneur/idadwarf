@@ -6,6 +6,7 @@
 #include <libdwarf.h>
 
 // local headers
+#include "defs.hpp"
 #include "ida_utils.hpp"
 
 using namespace std;

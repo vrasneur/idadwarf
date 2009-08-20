@@ -1,0 +1,8 @@
+#ifndef IDADWARF_DEFS_HPP
+#define IDADWARF_DEFS_HPP
+
+#define PLUGIN_NAME "ELF/DWARF plugin"
+
+#define PLUGIN_HOTKEY "ALT-F9"
+
+#endif // IDADWARF_DEFS_HPP

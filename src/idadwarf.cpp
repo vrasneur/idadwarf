@@ -18,6 +18,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+// only to overcome a namespace problem
+// I swear I don't use dangerous functions
 #define USE_DANGEROUS_FUNCTIONS
 
 // IDA headers
@@ -32,6 +34,7 @@
 
 // local headers
 #include "gcc_defs.hpp"
+#include "defs.hpp"
 #include "utils.hpp"
 #include "ida_utils.hpp"
 #include "die_cache.hpp"
@@ -277,6 +280,6 @@ plugin_t PLUGIN =
   // it could appear in the status line
   // or as a hint
   NULL,                   // multiline help about the plugin
-  PLUGIN_NAME,         // the preferred short name of the plugin
-  "ALT-F9"                // the preferred hotkey to run the plugin
+  PLUGIN_NAME,            // the preferred short name of the plugin
+  PLUGIN_HOTKEY           // the preferred hotkey to run the plugin
 };

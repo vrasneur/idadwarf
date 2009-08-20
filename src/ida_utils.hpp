@@ -14,8 +14,6 @@ extern int msg(char const *format, ...) GCC_PRINTF(1, 2);
 extern void warning(char const *message, ...) GCC_PRINTF(1, 2);
 extern void error(char const *format, ...) GCC_PRINTF(1, 2);
 
-#define PLUGIN_NAME "ELF/DWARF plugin"
-
 #define MSG(fmt, ...) msg("[" PLUGIN_NAME "] " fmt, ## __VA_ARGS__)
 
 #ifndef NDEBUG
