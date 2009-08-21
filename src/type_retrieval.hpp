@@ -5,8 +5,6 @@
 
 void try_visit_type_die(DieHolder &die);
 
-void do_second_pass(Dwarf_Debug dbg);
-
-void update_ptr_types(Dwarf_Debug dbg);
+void retrieve_types(Dwarf_Debug dbg, CUsHolder const &cus_holder);
 
 #endif // IDADWARF_TYPE_RETRIEVAL_HPP

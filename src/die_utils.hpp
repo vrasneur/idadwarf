@@ -147,4 +147,41 @@ private:
   void init(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die);
 };
 
+// compilation unit DIEs are kept in this object
+// to only have to retrieve them one time
+class CUsHolder : public qvector<Dwarf_Die>
+{
+public:
+  CUsHolder(Dwarf_Debug dbg)
+    : m_dbg(dbg)
+  {
+
+  }
+
+  virtual ~CUsHolder(void) throw()
+  {
+    for(size_t idx = 0; idx < size(); ++idx)
+    {
+      dwarf_dealloc(m_dbg, (*this)[idx], DW_DLA_DIE);
+      (*this)[idx] = NULL;
+    }
+
+    clear();
+  }
+
+private:
+  Dwarf_Debug m_dbg;
+
+  // no copying or assignment
+  CUsHolder(CUsHolder const &);
+  CUsHolder &operator=(CUsHolder const &);
+};
+
+// DIE visiting function
+// warning: should not throw any exception!
+typedef void(*die_visitor_fun)(DieHolder &die);
+
+void do_dies_traversal(Dwarf_Debug dbg, CUsHolder const &cus_holder,
+                       die_visitor_fun visit);
+
 #endif // IDADWARF_DIE_UTILS_HPP

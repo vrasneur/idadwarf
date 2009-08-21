@@ -347,3 +347,53 @@ void DieHolder::init(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die)
   m_offset_used = false;
   m_dealloc_die = dealloc_die;
 }
+
+void do_dies_traversal(Dwarf_Debug dbg, CUsHolder const &cus_holder,
+                       die_visitor_fun visit)
+{
+  qstack<Dwarf_Die> stack;
+
+  for(size_t idx = 0; idx < cus_holder.size(); ++idx)
+  {
+    Dwarf_Die cu_die = cus_holder[idx];
+
+    stack.push_back(cu_die);
+
+    while(!stack.empty())
+    {
+      Dwarf_Die other_die = NULL;
+      Dwarf_Die current_die = stack.back();
+      DieHolder holder(dbg, current_die, current_die != cu_die);
+
+      stack.pop_back();
+
+      (*visit)(holder);
+
+      try
+      {
+        other_die = holder.get_sibling();
+        if(other_die != NULL)
+        {
+          stack.push_back(other_die);
+        }
+      }
+      catch(DieException const &exc)
+      {
+        MSG("cannot retrieve current DIE sibling (skipping): %s\n", exc.what());
+      }
+
+      try
+      {
+        other_die = holder.get_child();
+        if(other_die != NULL)
+        {
+          stack.push_back(other_die);
+        }
+      }
+      catch(DieException const &exc)
+      {
+        MSG("cannot retrieve current DIE child (skipping): %s\n", exc.what());
+      }
+    }
+  }
+}

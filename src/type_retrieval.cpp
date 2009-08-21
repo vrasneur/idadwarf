@@ -298,8 +298,8 @@ private:
 
 
 // add an enum even if its name already exists
-enum_t add_dup_enum(DieHolder &enumeration_holder,
-                    char const *name, flags_t flag)
+static enum_t add_dup_enum(DieHolder &enumeration_holder,
+                           char const *name, flags_t flag)
 {
   enum_t enum_id = add_enum(BADADDR, name, flag);
 
@@ -330,7 +330,7 @@ enum_t add_dup_enum(DieHolder &enumeration_holder,
 }
 
 // add a struct/union even if its name already exists
-tid_t add_dup_struc(DieHolder &structure_holder, char const *name)
+static tid_t add_dup_struc(DieHolder &structure_holder, char const *name)
 {
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
   tid_t struc_id = add_struc(BADADDR, name, is_union);
@@ -589,7 +589,7 @@ static void process_unspecified(GCC_UNUSED DieHolder &unspecified_holder)
   (void)add_unspecified_type(&cache);
 }
 
-bool look_ref_type(DieHolder &modifier_holder, die_cache *cache)
+static bool look_ref_type(DieHolder &modifier_holder, die_cache *cache)
 {
   bool found = true;
 
@@ -1370,7 +1370,7 @@ static void second_process_subroutine(DieHolder &subroutine_holder,
   }
 }
 
-void do_second_pass(Dwarf_Debug dbg)
+static void do_second_pass(Dwarf_Debug dbg)
 {
   for(CachedDieIterator cached_iter(dbg);
       *cached_iter != NULL; ++cached_iter)
@@ -1450,7 +1450,7 @@ static void update_structure_member(Dwarf_Debug dbg, Dwarf_Half const tag,
 }
 
 // update pointers to function with (old) unknown return/parameters
-void update_ptr_types(Dwarf_Debug dbg)
+static void update_ptr_types(Dwarf_Debug dbg)
 {
   for(CacheIterator iter(DIE_TYPE); *iter != NULL; ++iter)
   {
@@ -1514,4 +1514,12 @@ void update_ptr_types(Dwarf_Debug dbg)
       }
     }
   }
+}
+
+void retrieve_types(Dwarf_Debug dbg, CUsHolder const &cus_holder)
+{
+  do_dies_traversal(dbg, cus_holder, try_visit_type_die);
+  do_second_pass(dbg);
+  update_ptr_types(dbg);
+  // TODO: add a 'remove duplicates' pass
 }
