@@ -8,6 +8,7 @@
 
 // local headers
 #include "gcc_defs.hpp"
+#include "defs.hpp"
 
 // enable format string warnings
 extern int msg(char const *format, ...) GCC_PRINTF(1, 2);

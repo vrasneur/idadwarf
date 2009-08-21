@@ -25,7 +25,6 @@
 // IDA headers
 #include <ida.hpp>
 #include <loader.hpp> // plugin stuff
-#include <enum.hpp>
 
 // additional libs headers
 #include <libelf.h>
@@ -35,80 +34,16 @@
 // local headers
 #include "gcc_defs.hpp"
 #include "defs.hpp"
-#include "utils.hpp"
 #include "ida_utils.hpp"
 #include "die_cache.hpp"
 #include "die_utils.hpp"
 #include "type_retrieval.hpp"
+#include "macro_retrieval.hpp"
 
 using namespace std;
 
 // global DIE cache
 DieCache diecache;
-
-void process_macros(Dwarf_Debug dbg)
-{
-  // create an anonymous enum to store the macros' integer constants
-  enum_t enum_id = add_enum(BADADDR, NULL, 0);
-
-  if(enum_id == BADNODE)
-  {
-    MSG("cannot create an enum to store constants from macros\n");
-  }
-  else
-  {
-    Dwarf_Off offset = 0;
-    Dwarf_Unsigned max = 0;
-    Dwarf_Signed count = 0;
-    Dwarf_Macro_Details *maclist = NULL;
-    Dwarf_Error err = NULL;
-    int ret = DW_DLV_ERROR;
-
-    while((ret = dwarf_get_macro_details(dbg, offset, max, &count,
-                                         &maclist, &err)) == DW_DLV_OK)
-    {
-      for(Dwarf_Signed idx = 0; idx < count; ++idx)
-      {
-        struct Dwarf_Macro_Details_s *dmd = &maclist[idx];
-
-        if(dmd->dmd_type == DW_MACINFO_define)
-        {
-          long val = 0;
-          char *macro = dmd->dmd_macro;
-          char *value_start = dwarf_find_macro_value_start(macro);
-          int res = my_strict_strtol(value_start, &val);
-
-          // TODO: check if it is a function-like macro
-          // TODO: a strdup might be better?
-          value_start[-1] = '\0';
-          if(res == 0)
-          {
-            add_const(enum_id, macro, static_cast<uval_t>(val));
-          }
-          else
-          {
-            // number conversion failed
-            // maybe the value was another macro name
-            const_t const_id = get_const_by_name(value_start);
-
-            if(const_id != BADADDR && get_const_enum(const_id) == enum_id)
-            {
-              add_const(enum_id, value_start, get_const_value(const_id));
-            }
-          }
-        }
-      }
-
-      offset = maclist[count - 1].dmd_offset + 1;
-      dwarf_dealloc(dbg, maclist, DW_DLA_STRING);
-    }
-
-    if(ret == DW_DLV_ERROR)
-    {
-      MSG("error getting macro details: %s\n", dwarf_errmsg(err));
-    }
-  }
-}
 
 // retrieve compilation units
 void retrieve_cus(Dwarf_Debug dbg, CUsHolder &cus_holder)
@@ -203,7 +138,7 @@ void idaapi run(GCC_UNUSED int arg)
     }
     else if(ret != DW_DLV_OK)
     {
-      WARNING("error during libdwarf init: %s\n", dwarf_errmsg(err));
+      MSG("error during libdwarf init: %s\n", dwarf_errmsg(err));
     }
     else
     {
@@ -212,13 +147,13 @@ void idaapi run(GCC_UNUSED int arg)
       retrieve_cus(dbg, cus_holder);
       retrieve_types(dbg, cus_holder);
 #if 0
-      process_macros(dbg);
+      retrieve_macros(dbg);
 #endif
 
       ret = dwarf_finish(dbg, &err);
       if(ret != DW_DLV_OK)
       {
-        WARNING("libdwarf cleanup failed: %s\n", dwarf_errmsg(err));
+        MSG("libdwarf cleanup failed: %s\n", dwarf_errmsg(err));
       }
     }
   }
