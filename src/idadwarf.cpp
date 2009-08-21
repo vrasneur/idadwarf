@@ -43,6 +43,36 @@
 
 using namespace std;
 
+// compilation unit DIEs are kept in this object
+// to only have to retrieve them one time
+class CUsHolder : public qvector<Dwarf_Die>
+{
+public:
+  CUsHolder(Dwarf_Debug dbg)
+    : m_dbg(dbg)
+  {
+
+  }
+
+  virtual ~CUsHolder(void) throw()
+  {
+    for(size_t idx = 0; idx < size(); ++idx)
+    {
+      dwarf_dealloc(m_dbg, (*this)[idx], DW_DLA_DIE);
+      (*this)[idx] = NULL;
+    }
+
+    clear();
+  }
+
+private:
+  Dwarf_Debug m_dbg;
+
+  // no copying or assignment
+  CUsHolder(CUsHolder const &);
+  CUsHolder &operator=(CUsHolder const &);
+};
+
 // global DIE cache
 DieCache diecache;
 
@@ -110,51 +140,57 @@ void process_macros(Dwarf_Debug dbg)
   }
 }
 
-void do_dies_traversal(Dwarf_Debug dbg, Dwarf_Die root_die)
+void do_dies_traversal(Dwarf_Debug dbg, CUsHolder const &cus_holder)
 {
-  qvector<Dwarf_Die> queue;
+  qstack<Dwarf_Die> stack;
 
-  queue.push_back(root_die);
-
-  while(!queue.empty())
+  for(size_t idx = 0; idx < cus_holder.size(); ++idx)
   {
-    Dwarf_Die other_die = NULL;
-    DieHolder holder(dbg, queue.back());
+    Dwarf_Die cu_die = cus_holder[idx];
 
-    queue.pop_back();
+    stack.push_back(cu_die);
 
-    try_visit_type_die(holder);
-
-    try
+    while(!stack.empty())
     {
-      other_die = holder.get_sibling();
-      if(other_die != NULL)
+      Dwarf_Die other_die = NULL;
+      Dwarf_Die current_die = stack.back();
+      DieHolder holder(dbg, current_die, current_die != cu_die);
+
+      stack.pop_back();
+
+      try_visit_type_die(holder);
+
+      try
       {
-        queue.push_back(other_die);
+        other_die = holder.get_sibling();
+        if(other_die != NULL)
+        {
+          stack.push_back(other_die);
+        }
       }
-    }
-    catch(DieException const &exc)
-    {
-      MSG("cannot retrieve current DIE sibling (skipping): %s\n", exc.what());
-    }
-
-    try
-    {
-      other_die = holder.get_child();
-      if(other_die != NULL)
+      catch(DieException const &exc)
       {
-        queue.push_back(other_die);
+        MSG("cannot retrieve current DIE sibling (skipping): %s\n", exc.what());
       }
-    }
-    catch(DieException const &exc)
-    {
-      MSG("cannot retrieve current DIE child (skipping): %s\n", exc.what());
+
+      try
+      {
+        other_die = holder.get_child();
+        if(other_die != NULL)
+        {
+          stack.push_back(other_die);
+        }
+      }
+      catch(DieException const &exc)
+      {
+        MSG("cannot retrieve current DIE child (skipping): %s\n", exc.what());
+      }
     }
   }
 }
 
-// process compilation units
-void process_cus(Dwarf_Debug dbg)
+// retrieve compilation units
+void retrieve_cus(Dwarf_Debug dbg, CUsHolder &cus_holder)
 {
   Dwarf_Unsigned cu_header_length = 0;
   Dwarf_Unsigned abbrev_offset = 0;
@@ -173,21 +209,23 @@ void process_cus(Dwarf_Debug dbg)
     ret = dwarf_siblingof(dbg, NULL, &cu_die, &err);
     if(ret == DW_DLV_OK)
     {
-      Dwarf_Half tag = 0;
-
-      ret = dwarf_tag(cu_die, &tag, &err);
-      if(ret == DW_DLV_OK)
+      try
       {
+        DieHolder cu_holder(dbg, cu_die, false);
+        Dwarf_Half const tag = cu_holder.get_tag();
+
         if(tag == DW_TAG_compile_unit)
         {
-          // CU die will be dealloc'ed when doing the traversal
-          // TODO: handle DW_AT_base_types
-          do_dies_traversal(dbg, cu_die);
+          cus_holder.push_back(cu_die);
         }
-        else
+        else if(tag != DW_TAG_partial_unit)
         {
           MSG("got %d tag instead of compile unit (skipping)\n", tag);
         }
+      }
+      catch(DieException const &exc)
+      {
+        MSG("cannot retrieve compilation unit: %s (skipping)\n", exc.what());
       }
     }
 
@@ -248,7 +286,10 @@ void idaapi run(GCC_UNUSED int arg)
     }
     else
     {
-      process_cus(dbg);
+      CUsHolder cus_holder(dbg);
+
+      retrieve_cus(dbg, cus_holder);
+      do_dies_traversal(dbg, cus_holder);
       do_second_pass(dbg);
       update_ptr_types(dbg);
 #if 0

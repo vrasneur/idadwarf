@@ -64,9 +64,9 @@ private:
 class DieHolder
 {
 public:
-  DieHolder(Dwarf_Debug dbg, Dwarf_Die die) throw();
+  DieHolder(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die=true) throw();
 
-  DieHolder(Dwarf_Debug dbg, Dwarf_Off offset);
+  DieHolder(Dwarf_Debug dbg, Dwarf_Off offset, bool const dealloc_die=true);
 
   ~DieHolder(void) throw();
 
@@ -137,13 +137,14 @@ private:
   typedef map<int, Dwarf_Attribute> MapAttrs;
   MapAttrs m_attrs;
   bool m_offset_used;
+  bool m_dealloc_die;
 
   // no copying or assignment
   DieHolder(DieHolder const &);
   DieHolder &operator=(DieHolder const &);
 
   // common member vars init for the constructors
-  void init(Dwarf_Debug dbg, Dwarf_Die die);
+  void init(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die);
 };
 
 #endif // IDADWARF_DIE_UTILS_HPP

@@ -61,12 +61,12 @@ int get_small_encoding_value(Dwarf_Attribute attrib, Dwarf_Signed *val, Dwarf_Er
   return ret;
 }
 
-DieHolder::DieHolder(Dwarf_Debug dbg, Dwarf_Die die) throw()
+DieHolder::DieHolder(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die) throw()
 {
-  init(dbg, die);
+  init(dbg, die, dealloc_die);
 }
 
-DieHolder::DieHolder(Dwarf_Debug dbg, Dwarf_Off offset)
+DieHolder::DieHolder(Dwarf_Debug dbg, Dwarf_Off offset, bool const dealloc_die)
 {
   Dwarf_Die die = NULL;
   Dwarf_Error err = NULL;
@@ -74,7 +74,7 @@ DieHolder::DieHolder(Dwarf_Debug dbg, Dwarf_Off offset)
   CHECK_DWERR(dwarf_offdie(dbg, offset, &die, &err), err,
               "cannot retrieve DIE from offset 0x%" DW_PR_DUx, offset);
 
-  init(dbg, die);
+  init(dbg, die, dealloc_die);
 }
 
 DieHolder::~DieHolder(void) throw()
@@ -95,7 +95,11 @@ DieHolder::~DieHolder(void) throw()
     }
   }
 
-  dwarf_dealloc(m_dbg, m_die, DW_DLA_DIE);
+  if(m_dealloc_die)
+  {
+    dwarf_dealloc(m_dbg, m_die, DW_DLA_DIE);
+  }
+
   m_die = NULL;
 }
 
@@ -334,11 +338,12 @@ bool DieHolder::get_ordinal(ulong *ordinal)
   return found;
 }
 
-void DieHolder::init(Dwarf_Debug dbg, Dwarf_Die die)
+void DieHolder::init(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die)
 {
   m_dbg = dbg;
   m_die = die;
   m_offset = 0;
   m_name = NULL;
   m_offset_used = false;
+  m_dealloc_die = dealloc_die;
 }
