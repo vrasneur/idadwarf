@@ -1479,7 +1479,7 @@ static void update_ptr_types(Dwarf_Debug dbg)
             ok = set_numbered_type(idati, cache->ordinal, NTF_REPLACE, old_name.c_str(), new_type.c_str());
             if(ok)
             {
-              DEBUG("pointer type changed ordinal=%lu\n", cache.ordinal);
+              DEBUG("pointer type changed ordinal=%lu\n", cache->ordinal);
 
               // propagate the new type in the aggregate types
               update_structure_member(dbg, DW_TAG_structure_type, old_type, new_type);

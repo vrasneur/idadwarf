@@ -4,6 +4,7 @@
 #include "frame.hpp"
 #include "struct.hpp"
 #include "area.hpp"
+#include "name.hpp"
 
 // local headers
 #include "iterators.hpp"
@@ -19,7 +20,7 @@ static void visit_frame_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
   char const *reg_name = NULL;
 
   // only 1 location in a location description is supported
-  if(locdesc->ld_cents == 1)
+  if(var_name != NULL && locdesc->ld_cents == 1)
   {
     Dwarf_Loc *loc = &locdesc->ld_s[0];
 
@@ -176,6 +177,53 @@ static void process_subprogram(DieHolder &subprogram_holder)
   }
 }
 
+void process_label(DieHolder &label_holder)
+{
+  qstring name(label_holder.get_name());
+  Dwarf_Attribute attrib = label_holder.get_attr(DW_AT_low_pc);
+  DieHolder::Ptr origin_holder;
+
+  // one required attribute is missing?
+  if((name.empty() && attrib != NULL) ||
+     (!name.empty() && attrib == NULL))
+  {
+    // find it in the origin DIE
+    Dwarf_Attribute abstract_origin = label_holder.get_attr(DW_AT_abstract_origin);
+
+    if(abstract_origin != NULL)
+    {
+      Dwarf_Off const offset = label_holder.get_ref_from_attr(DW_AT_abstract_origin);
+
+      origin_holder.reset(new DieHolder(label_holder.get_dbg(), offset));
+    }
+
+    if(origin_holder.get() != NULL)
+    {
+      if(name.empty())
+      {
+        name = origin_holder->get_name();
+        // origin_holder will only be used to look for the low pc
+        origin_holder.reset();
+      }
+
+      if(attrib == NULL)
+      {
+        attrib = origin_holder->get_attr(DW_AT_low_pc);
+      }
+    }
+  }
+
+  if(!name.empty() && attrib != NULL)
+  {
+    ea_t const low_pc = static_cast<ea_t>(origin_holder.get() != NULL ?
+                                          origin_holder->get_addr_from_attr(DW_AT_low_pc) :
+                                          label_holder.get_addr_from_attr(DW_AT_low_pc));
+
+    set_name(low_pc, name.c_str(), SN_CHECK | SN_LOCAL);
+    DEBUG("added a label name='%s' at offset=0x%lx\n", name.c_str(), low_pc);
+  }
+}
+
 void visit_frame_die(DieHolder &die_holder)
 {
   if(!die_holder.in_cache())
@@ -189,6 +237,9 @@ void visit_frame_die(DieHolder &die_holder)
       break;
     case DW_TAG_inlined_subroutine:
       // TODO
+      break;
+    case DW_TAG_label:
+      process_label(die_holder);
       break;
     default:
       break;
