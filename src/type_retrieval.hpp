@@ -3,7 +3,9 @@
 
 #include "die_utils.hpp"
 
-void try_visit_type_die(DieHolder &die);
+void visit_type_die(DieHolder &die_holder);
+
+TRY_VISIT_DIE(visit_type_die)
 
 void retrieve_types(Dwarf_Debug dbg, CUsHolder const &cus_holder);
 

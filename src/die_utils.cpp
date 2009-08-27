@@ -139,6 +139,19 @@ Dwarf_Attribute DieHolder::get_attr(int attr)
   return attrib;
 }
 
+Dwarf_Addr DieHolder::get_addr_from_attr(int attr)
+{
+  Dwarf_Addr addr = 0;
+  Dwarf_Error err = NULL;
+  Dwarf_Attribute attrib = get_attr(attr);
+
+  CHECK_DWERR2(attrib == NULL, NULL, "cannot find DIE attribute %d\n", attr);
+  CHECK_DWERR(dwarf_formaddr(attrib, &addr, &err), err,
+              "cannot get address");
+
+  return addr;
+}
+
 Dwarf_Off DieHolder::get_ref_from_attr(int attr)
 {
   Dwarf_Off offset = 0;
@@ -179,39 +192,149 @@ Dwarf_Off DieHolder::get_ref_from_attr(int attr)
   return offset;
 }
 
-Dwarf_Unsigned DieHolder::get_member_offset(void)
+bool DieHolder::get_operand(int const attr, ea_t const rel_addr, Dwarf_Small const atom,
+                            Dwarf_Unsigned *operand, bool only_locblock)
 {
-  Dwarf_Attribute attrib = get_attr(DW_AT_data_member_location);
+  Dwarf_Attribute attrib = get_attr(attr);
   Dwarf_Locdesc **llbuf = NULL;
-  Dwarf_Loc *loc = NULL;
+  Dwarf_Locdesc *locdesc = NULL;
+  Dwarf_Signed count = 0;
+  Dwarf_Error err = NULL;
+  DwarfDealloc dealloc(m_dbg);
+  bool found = false;
+  bool ret = false;
+
+  CHECK_DWERR2(attrib == NULL, NULL,
+               "retrieving an operand implies finding the attribute...");
+
+  CHECK_DWERR(dwarf_loclist_n(attrib, &llbuf, &count, &err), err,
+              "cannot get location descriptions");
+
+  dealloc.add(llbuf, DW_DLA_LIST);
+  for(Dwarf_Signed idx = 0; idx < count; ++idx)
+  {
+    locdesc = llbuf[idx];
+    // handle deallocation too
+    dealloc.add(llbuf[idx], DW_DLA_LOCDESC);
+    dealloc.add(llbuf[idx]->ld_s, DW_DLA_LOC_BLOCK);
+
+    if(!found)
+    {
+      // from a location block?
+      if(!locdesc->ld_from_loclist)
+      {
+        // no need to check the address
+        found = true;
+      }
+      // this loc desc is from a location list
+      else if(!only_locblock &&
+              (locdesc->ld_lopc <= rel_addr &&
+               locdesc->ld_hipc > rel_addr))
+      {
+        found = true;
+      }
+    }
+  }
+  
+  if(found)
+  {
+    CHECK_DWERR2(locdesc->ld_cents != 1, NULL,
+                 "only 1 location in a location description is supported");
+
+    Dwarf_Loc *loc = &locdesc->ld_s[0];
+
+    if(loc->lr_atom == atom)
+    {
+      *operand = loc->lr_number;
+      ret = true;
+    }
+  }
+
+  return ret;
+}
+
+void DieHolder::get_frame_pointer_offsets(OffsetAreas &offset_areas)
+{
+  Dwarf_Attribute attrib = get_attr(DW_AT_frame_base);
+  Dwarf_Locdesc **llbuf = NULL;
+  Dwarf_Locdesc *locdesc = NULL;
   Dwarf_Signed count = 0;
   Dwarf_Error err = NULL;
   DwarfDealloc dealloc(m_dbg);
 
   CHECK_DWERR2(attrib == NULL, NULL,
-               "retrieving a member offset implies a 'DW_AT_data_member_location' attribute");
+               "retrieving an operand implies finding the attribute...");
 
   CHECK_DWERR(dwarf_loclist_n(attrib, &llbuf, &count, &err), err,
               "cannot get location descriptions");
 
-  // handle deallocation
   dealloc.add(llbuf, DW_DLA_LIST);
   for(Dwarf_Signed idx = 0; idx < count; ++idx)
   {
+    ea_t low_pc = 0;
+    ea_t high_pc = 0;
+
+    locdesc = llbuf[idx];
+    // handle deallocation too
     dealloc.add(llbuf[idx], DW_DLA_LOCDESC);
     dealloc.add(llbuf[idx]->ld_s, DW_DLA_LOC_BLOCK);
+
+    // only 1 location in a location description is supported
+    if(locdesc->ld_cents == 1)
+    {
+      Dwarf_Loc *loc = &locdesc->ld_s[0];
+
+      // from a location block?
+      if(!locdesc->ld_from_loclist)
+      {
+        low_pc = BADADDR;
+        high_pc = BADADDR;
+      }
+      // this loc desc is from a location list
+      else
+      {
+        low_pc = static_cast<ea_t>(locdesc->ld_lopc);
+        high_pc = static_cast<ea_t>(locdesc->ld_hipc);
+      }
+
+      // is it an ebp (i.e. frame-pointer) offset?
+      if(loc->lr_atom == DW_OP_breg5)
+      {
+        offset_areas.push_back(OffsetArea(low_pc, high_pc,
+                                          // operand is unsigned, but should be signed...
+                                          static_cast<sval_t>(loc->lr_number)));
+      }
+    }
   }
+}
 
-  CHECK_DWERR2(count != 1, NULL,
-               "only 1 location description is supported");
-  CHECK_DWERR2(llbuf[0]->ld_cents != 1, NULL,
-               "only 1 location in a location description is supported");
+void DieHolder::retrieve_var(func_t *funptr, ea_t const cu_low_pc,
+                             OffsetAreas const &offset_areas, var_visitor_fun visit)
+{
+  Dwarf_Attribute attrib = get_attr(DW_AT_location);
 
-  loc = &llbuf[0]->ld_s[0];
-  CHECK_DWERR2(loc->lr_atom != DW_OP_plus_uconst, NULL,
-               "only the DW_OP_plus_count atom is supported");
+  if(attrib != NULL)
+  {
+    Dwarf_Locdesc **llbuf = NULL;
+    Dwarf_Locdesc *locdesc = NULL;
+    Dwarf_Signed count = 0;
+    Dwarf_Error err = NULL;
+    DwarfDealloc dealloc(m_dbg);
 
-  return loc->lr_number;
+    CHECK_DWERR(dwarf_loclist_n(attrib, &llbuf, &count, &err), err,
+                "cannot get location descriptions");
+
+    dealloc.add(llbuf, DW_DLA_LIST);
+    for(Dwarf_Signed idx = 0; idx < count; ++idx)
+    {
+      locdesc = llbuf[idx];
+      // handle deallocation too
+      dealloc.add(llbuf[idx], DW_DLA_LOCDESC);
+      dealloc.add(llbuf[idx]->ld_s, DW_DLA_LOC_BLOCK);
+
+      visit(*this, locdesc, funptr, cu_low_pc, offset_areas);
+    }
+  }
 }
 
 Dwarf_Signed DieHolder::get_attr_small_val(int attr)
@@ -260,6 +383,17 @@ Dwarf_Off DieHolder::get_CU_offset_range(Dwarf_Off *cu_length)
 
   CHECK_DWERR(dwarf_die_CU_offset_range(m_die, &cu_offset, cu_length, &err), err,
               "cannot get DIE CU offset range");
+
+  return cu_offset;
+}
+
+Dwarf_Off DieHolder::get_CU_offset(void)
+{
+  Dwarf_Off cu_offset = 0;
+  Dwarf_Error err = NULL;
+
+  CHECK_DWERR(dwarf_CU_dieoffset_given_die(m_die, &cu_offset, &err), err,
+              "cannot get CU DIE offset");
 
   return cu_offset;
 }

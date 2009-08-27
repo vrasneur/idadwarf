@@ -1207,7 +1207,7 @@ static void process_subroutine(DieHolder &subroutine_holder)
   }
 }
 
-static void visit_type_die(DieHolder &die_holder)
+void visit_type_die(DieHolder &die_holder)
 {
   if(!die_holder.in_cache())
   {
@@ -1245,18 +1245,6 @@ static void visit_type_die(DieHolder &die_holder)
     default:
       break;
     }
-  }
-}
-
-void try_visit_type_die(DieHolder &die_holder)
-{
-  try
-  {
-    visit_type_die(die_holder);
-  }
-  catch(DieException const &exc)
-  {
-    MSG("cannot process DIE (skipping): %s\n", exc.what());
   }
 }
 

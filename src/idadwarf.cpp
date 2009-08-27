@@ -38,6 +38,7 @@
 #include "die_cache.hpp"
 #include "die_utils.hpp"
 #include "type_retrieval.hpp"
+#include "frame_retrieval.hpp"
 #include "macro_retrieval.hpp"
 
 using namespace std;
@@ -146,6 +147,7 @@ void idaapi run(GCC_UNUSED int arg)
 
       retrieve_cus(dbg, cus_holder);
       retrieve_types(dbg, cus_holder);
+      retrieve_frames(dbg, cus_holder);
 #if 0
       retrieve_macros(dbg);
 #endif

@@ -6,6 +6,10 @@
 #include <memory>
 #include <sstream>
 
+// IDA headers
+#include "ida.hpp"
+#include "area.hpp"
+
 // additional libs headers
 #include <dwarf.h>
 #include <libdwarf.h>
@@ -18,6 +22,25 @@ using namespace std;
 #define CHECK_DWERR2(cond, err, fmt, ...) if(cond) { throw DieException(__FILE__, __LINE__, err, fmt, ## __VA_ARGS__); }
 #define CHECK_DWERR(cond, err, fmt, ...) CHECK_DWERR2((cond) != DW_DLV_OK, err, fmt, ## __VA_ARGS__)
 #define THROW_DWERR(fmt, ...) throw DieException(__FILE__, __LINE__, NULL, fmt, ## __VA_ARGS__);
+
+struct OffsetArea : public area_t
+{
+  OffsetArea(ea_t ea1, ea_t ea2, sval_t offset_)
+    : offset(offset_)
+  {
+    startEA = ea1;
+    endEA = ea2;
+  }
+  sval_t offset;
+};
+
+typedef qvector<OffsetArea> OffsetAreas;
+
+// forward class declaration
+class DieHolder;
+
+typedef void (*var_visitor_fun)(DieHolder &, Dwarf_Locdesc const *,
+                                func_t *, ea_t const, OffsetAreas const &);
 
 int get_small_encoding_value(Dwarf_Attribute attrib, Dwarf_Signed *val, Dwarf_Error *err);
 
@@ -95,9 +118,33 @@ public:
 
   Dwarf_Attribute get_attr(int attr);
 
+  Dwarf_Addr get_addr_from_attr(int attr);
+
   Dwarf_Off get_ref_from_attr(int attr);
 
-  Dwarf_Unsigned get_member_offset(void);
+  bool get_operand(int const attr, ea_t const rel_addr, Dwarf_Small const atom,
+                   Dwarf_Unsigned *operand, bool only_locblock=false);
+
+  Dwarf_Unsigned get_member_offset(void)
+  {
+    Dwarf_Unsigned offset = 0;
+    bool ret = get_operand(DW_AT_data_member_location, 0, DW_OP_plus_uconst,
+                           &offset, true);
+
+    CHECK_DWERR2(!ret, NULL, "cannot get a member offset");
+
+    return offset;
+  }
+
+  bool get_frame_base_offset(ea_t const rel_addr, Dwarf_Unsigned *offset)
+  {
+    return get_operand(DW_AT_location, rel_addr, DW_OP_fbreg, offset);
+  }
+
+  void get_frame_pointer_offsets(OffsetAreas &offset_areas);
+
+  void retrieve_var(func_t *funptr, ea_t const cu_low_pc,
+                    OffsetAreas const &offset_areas, var_visitor_fun visit);
 
   Dwarf_Signed get_attr_small_val(int attr);
 
@@ -106,6 +153,8 @@ public:
   Dwarf_Off get_offset(void);
 
   Dwarf_Off get_CU_offset_range(Dwarf_Off *cu_length);
+
+  Dwarf_Off get_CU_offset(void);
 
   Dwarf_Half get_tag(void);
 
@@ -180,6 +229,21 @@ private:
 // DIE visiting function
 // warning: should not throw any exception!
 typedef void(*die_visitor_fun)(DieHolder &die);
+
+// wrapper to have an exception-safe visiting function
+#define TRY_VISIT_DIE(visitor)                             \
+  static inline void try_##visitor(DieHolder &die_holder)  \
+  {                                                        \
+    try                                                    \
+    {                                                      \
+      visitor(die_holder);                                 \
+    }                                                      \
+    catch(DieException const &exc)                         \
+    {                                                      \
+      MSG("cannot process DIE (skipping): %s\n",           \
+          exc.what());                                     \
+    }                                                      \
+  }
 
 void do_dies_traversal(Dwarf_Debug dbg, CUsHolder const &cus_holder,
                        die_visitor_fun visit);
