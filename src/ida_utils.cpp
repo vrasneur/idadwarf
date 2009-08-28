@@ -1,5 +1,9 @@
 #include "ida_utils.hpp"
 
+// IDA headers
+#include <struct.hpp>
+#include <enum.hpp>
+
 // misc IDA utility funs
 
 type_t const *get_ptrs_base_type(type_t const *type)
@@ -155,4 +159,37 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal
   }
 
   return saved;
+}
+
+flags_t fill_typeinfo(typeinfo_t *mt, ulong const ordinal, type_t const **type)
+{
+  char const *type_name = get_numbered_type_name(idati, ordinal);
+  bool const ok = get_numbered_type(idati, ordinal, type);
+  flags_t flags = 0;
+  
+  if(type_name == NULL || !ok)
+  {
+    MSG("cannot get member type from ordinal=%lu\n", ordinal);
+  }
+  else
+  {
+    if(is_type_enum(**type))
+    {
+      enum_t const enum_id = getn_enum(ordinal);
+      uval_t const serial = get_enum_idx(ordinal);
+
+      mt->ec.tid = enum_id;
+      mt->ec.serial = serial;
+      flags = enumflag();
+    }
+    else if(is_type_struni(**type))
+    {
+      tid_t const mstruc_id = get_struc_id(type_name);
+
+      mt->tid = mstruc_id;
+      flags = struflag();
+    }
+  }
+
+  return flags;
 }

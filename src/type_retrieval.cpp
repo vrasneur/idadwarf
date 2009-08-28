@@ -296,7 +296,6 @@ private:
   }
 };
 
-
 // add an enum even if its name already exists
 static enum_t add_dup_enum(DieHolder &enumeration_holder,
                            char const *name, flags_t flag)
@@ -716,6 +715,7 @@ static void process_typed_typedef(DieHolder &typedef_holder, ulong const type_or
     ulong ordinal = 0;
 
     // typedef for an anonymous type?
+    // rename the existing type
     if(type_name[0] == '\0')
     {
       // there is no NTF_NOBASE support in rename_named_type
@@ -726,13 +726,13 @@ static void process_typed_typedef(DieHolder &typedef_holder, ulong const type_or
       ok = get_numbered_type(idati, type_ordinal, &type);
       if(ok)
       {
-        qtype new_type(type);
+        qtype existing_type(type);
 
         ok = del_numbered_type(idati, type_ordinal);
         if(ok)
         {
           ordinal = type_ordinal;
-          ok = set_simple_die_type(name, new_type, &ordinal);
+          ok = set_simple_die_type(name, existing_type, &ordinal);
           // make the deleted type refer to the typedef type
           if(ok && type_ordinal != ordinal)
           {
@@ -743,10 +743,10 @@ static void process_typed_typedef(DieHolder &typedef_holder, ulong const type_or
     }
     else
     {
-      qtype new_type;
+      qtype typedef_type;
 
-      make_new_type(new_type, NULL, type_ordinal);
-      ok = set_simple_die_type(name, new_type, &ordinal);
+      make_new_type(typedef_type, NULL, type_ordinal);
+      ok = set_simple_die_type(name, typedef_type, &ordinal);
     }
 
     if(ok)
@@ -800,7 +800,8 @@ static void process_array(DieHolder &array_holder)
     else
     {
       DieChildIterator iter(array_holder, DW_TAG_subrange_type);
-      qtype new_type;
+      qtype array_type;
+      qtype elem_type;
       Dwarf_Signed size = 0;
 
       if(*iter != NULL)
@@ -825,7 +826,9 @@ static void process_array(DieHolder &array_holder)
         }
       }
 
-      ok = build_array_type(&new_type, type, static_cast<int>(size));
+      // if we have an array of complex types, we need more than the type_t...
+      make_new_type(elem_type, type, cache.ordinal);
+      ok = build_array_type(&array_type, elem_type.c_str(), static_cast<int>(size));
       if(!ok)
       {
         MSG("cannot build array type from original type='%s' ordinal=%lu\n",
@@ -835,7 +838,7 @@ static void process_array(DieHolder &array_holder)
       {
         ulong ordinal = 0;
 
-        ok = set_simple_die_type(NULL, new_type, &ordinal);
+        ok = set_simple_die_type(NULL, array_type, &ordinal);
         if(ok)
         {
           DEBUG("added array from original type='%s' ordinal=%lu\n", type_name, cache.ordinal);
@@ -874,17 +877,15 @@ static void add_structure_member(DieHolder *member_holder, struc_t *sptr,
   }
   else
   {
-    char const *type_name = get_numbered_type_name(idati, cache.ordinal);
+    typeinfo_t mt;
     type_t const *type = NULL;
+    flags_t const flags = fill_typeinfo(&mt, cache.ordinal, &type);
 
-    ok = get_numbered_type(idati, cache.ordinal, &type);
-    if(type_name == NULL || !ok)
+    if(type != NULL)
     {
-      MSG("cannot get member type from ordinal=%lu\n", cache.ordinal);
-    }
-    else
-    {
-      size_t size = get_type_size0(idati, type);
+      // override type size for structs (we get an error if we don't do that...)
+      size_t const size = (flags == struflag() ? get_struc_size(mt.tid) :
+                           get_type_size0(idati, type));
 
       if(size == BADSIZE)
       {
@@ -892,26 +893,9 @@ static void add_structure_member(DieHolder *member_holder, struc_t *sptr,
       }
       else
       {
-        if(is_type_enum(*type))
+        if(flags != 0)
         {
-          enum_t enum_id = getn_enum(cache.ordinal);
-          uval_t serial = get_enum_idx(cache.ordinal);
-          typeinfo_t mt;
-
-          mt.ec.tid = enum_id;
-          mt.ec.serial = serial;
-          add_struc_member(sptr, member_name, moffset, enumflag(), &mt, size);
-        }
-        else if(is_type_struni(*type))
-        {
-          tid_t mstruc_id = get_struc_id(type_name);
-          typeinfo_t mt;
-          int res = 0;
-
-          // override type size (we get an error if we don't do that...)
-          size = get_struc_size(mstruc_id);
-          mt.tid = mstruc_id;
-          res = add_struc_member(sptr, member_name, moffset, struflag(), &mt, size);
+          int const res = add_struc_member(sptr, member_name, moffset, flags, &mt, size);
           if(res != 0)
           {
             MSG("failed to add struct/union member res=%d name='%s' offset=0x%" DW_PR_DUx "\n",
@@ -920,11 +904,12 @@ static void add_structure_member(DieHolder *member_holder, struc_t *sptr,
         }
         else
         {
+          // not a struct/union nor an enum
           add_struc_member(sptr, member_name, moffset, 0, NULL, size);
           member_t *mptr = get_member_by_name(sptr, member_name);
           set_member_tinfo(idati, sptr, mptr, 0, type, NULL, 0);
         }
-        
+
         DEBUG("adding one member name='%s'\n", member_name);
       }
     }
@@ -1043,10 +1028,11 @@ static void process_structure(DieHolder &structure_holder)
   // got an incomplete type?
   if(declaration != NULL)
   {
-    qtype new_type;
+    // add a void type for now...
+    qtype void_type;
 
-    new_type.append(BTF_VOID);
-    set_simple_die_type(name, new_type, &ordinal);
+    void_type.append(BTF_VOID);
+    set_simple_die_type(name, void_type, &ordinal);
   }
   else
   {

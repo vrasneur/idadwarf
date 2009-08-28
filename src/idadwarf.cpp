@@ -151,12 +151,6 @@ void idaapi run(GCC_UNUSED int arg)
 #if 0
       retrieve_macros(dbg);
 #endif
-
-      ret = dwarf_finish(dbg, &err);
-      if(ret != DW_DLV_OK)
-      {
-        MSG("libdwarf cleanup failed: %s\n", dwarf_errmsg(err));
-      }
     }
   }
 

@@ -209,10 +209,19 @@ public:
 
   virtual ~CUsHolder(void) throw()
   {
+    Dwarf_Error err = NULL;
+    int ret = 0;
+
     for(size_t idx = 0; idx < size(); ++idx)
     {
       dwarf_dealloc(m_dbg, (*this)[idx], DW_DLA_DIE);
       (*this)[idx] = NULL;
+    }
+
+    ret = dwarf_finish(m_dbg, &err);
+    if(ret != DW_DLV_OK)
+    {
+      MSG("libdwarf cleanup failed: %s\n", dwarf_errmsg(err));
     }
 
     clear();

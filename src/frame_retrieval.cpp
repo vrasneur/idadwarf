@@ -11,6 +11,8 @@
 
 // TODO: diecache!
 
+extern DieCache diecache;
+
 // TODO: stack var with fpo-based functions
 static void visit_frame_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
                             func_t *funptr, ea_t const cu_low_pc,
@@ -118,8 +120,57 @@ static void visit_frame_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
 
           if(found)
           {
-            // TODO: apply variable type too
-            add_stkvar2(funptr, var_name, offset, 0, NULL, 0);
+            bool type_found = false;
+
+            if(var_holder.get_attr(DW_AT_type) != NULL)
+            {
+              die_cache cache;
+              Dwarf_Off const type_offset = var_holder.get_ref_from_attr(DW_AT_type);
+
+              if(diecache.get_cache(type_offset, &cache))
+              {
+                typeinfo_t mt;
+                type_t const *type = NULL;
+                flags_t flags = fill_typeinfo(&mt, cache.ordinal, &type);
+                
+                if(type != NULL)
+                {
+                  // override type size for structs (we get an error if we don't do that...)
+                  size_t const size = (flags == struflag() ? get_struc_size(mt.tid) :
+                                       get_type_size0(idati, type));
+
+                  if(size == BADSIZE)
+                  {
+                    MSG("cannot get size of stack frame var name='%s'\n", var_name);
+                  }
+                  else
+                  {
+                    if(flags != 0)
+                    {
+                      add_stkvar2(funptr, var_name, offset, flags, &mt, size);
+                    }
+                    else
+                    {
+                      // not a struct/union nor an enum
+                      add_stkvar2(funptr, var_name, offset, 0, NULL, size);
+                      member_t *mptr = get_member_by_name(fptr, var_name);
+                      if(mptr != NULL)
+                      {
+                        set_member_tinfo(idati, fptr, mptr, 0, type, NULL, 0);
+                      }
+                    }
+
+                    type_found = true;
+                  }
+                }
+              }
+            }
+
+            // no type info found at all? only set the name
+            if(!type_found)
+            {
+              add_stkvar2(funptr, var_name, offset, 0, NULL, 0);
+            }
           }
         }
       }
