@@ -178,6 +178,46 @@ static void visit_frame_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
   }      
 }
 
+static void process_local_vars(DieHolder &locals_holder, func_t *funptr,
+                               ea_t const cu_low_pc, OffsetAreas const &offset_areas)
+{
+  for(DieChildIterator iter(locals_holder, DW_TAG_formal_parameter);
+      *iter != NULL; ++iter)
+  {
+    DieHolder *param_holder = *iter;
+
+    param_holder->enable_abstract_origin();
+    param_holder->retrieve_var(funptr, cu_low_pc, offset_areas,
+                               visit_frame_var);
+  }
+
+  for(DieChildIterator iter(locals_holder, DW_TAG_variable);
+      *iter != NULL; ++iter)
+  {
+    DieHolder *var_holder = *iter;
+
+    var_holder->enable_abstract_origin();
+    var_holder->retrieve_var(funptr, cu_low_pc, offset_areas,
+                             visit_frame_var);
+  }
+
+  for(DieChildIterator iter(locals_holder, DW_TAG_inlined_subroutine);
+      *iter != NULL; ++iter)
+  {
+    DieHolder *subroutine_holder = *iter;
+
+    process_local_vars(*subroutine_holder, funptr, cu_low_pc, offset_areas);
+  }
+
+  for(DieChildIterator iter(locals_holder, DW_TAG_lexical_block);
+      *iter != NULL; ++iter)
+  {
+    DieHolder *block_holder = *iter;
+
+    process_local_vars(*block_holder, funptr, cu_low_pc, offset_areas);
+  }
+}
+
 static void process_subprogram(DieHolder &subprogram_holder)
 {
   Dwarf_Attribute attrib = subprogram_holder.get_attr(DW_AT_low_pc);
@@ -205,73 +245,24 @@ static void process_subprogram(DieHolder &subprogram_holder)
 
       subprogram_holder.get_frame_pointer_offsets(offset_areas);
 
-      for(DieChildIterator iter(subprogram_holder, DW_TAG_formal_parameter);
-          *iter != NULL; ++iter)
-      {
-        DieHolder *param_holder = *iter;
-
-        param_holder->retrieve_var(funptr, cu_low_pc, offset_areas,
-                                   visit_frame_var);
-      }
-
-      // TODO: for lexical blocks too...
-
-      for(DieChildIterator iter(subprogram_holder, DW_TAG_variable);
-          *iter != NULL; ++iter)
-      {
-        DieHolder *var_holder = *iter;
-
-        var_holder->retrieve_var(funptr, cu_low_pc, offset_areas,
-                                 visit_frame_var);
-      }
+      process_local_vars(subprogram_holder, funptr, cu_low_pc, offset_areas);
     }
   }
 }
 
 void process_label(DieHolder &label_holder)
 {
-  qstring name(label_holder.get_name());
+  label_holder.enable_abstract_origin();
+
+  char const *name = label_holder.get_name();
   Dwarf_Attribute attrib = label_holder.get_attr(DW_AT_low_pc);
-  DieHolder::Ptr origin_holder;
 
-  // one required attribute is missing?
-  if((name.empty() && attrib != NULL) ||
-     (!name.empty() && attrib == NULL))
+  if(name != NULL && attrib != NULL)
   {
-    // find it in the origin DIE
-    Dwarf_Attribute abstract_origin = label_holder.get_attr(DW_AT_abstract_origin);
+    ea_t const low_pc = static_cast<ea_t>(label_holder.get_addr_from_attr(DW_AT_low_pc));
 
-    if(abstract_origin != NULL)
-    {
-      Dwarf_Off const offset = label_holder.get_ref_from_attr(DW_AT_abstract_origin);
-
-      origin_holder.reset(new DieHolder(label_holder.get_dbg(), offset));
-    }
-
-    if(origin_holder.get() != NULL)
-    {
-      if(name.empty())
-      {
-        name = origin_holder->get_name();
-        // origin_holder will only be used to look for the low pc
-        origin_holder.reset();
-      }
-
-      if(attrib == NULL)
-      {
-        attrib = origin_holder->get_attr(DW_AT_low_pc);
-      }
-    }
-  }
-
-  if(!name.empty() && attrib != NULL)
-  {
-    ea_t const low_pc = static_cast<ea_t>(origin_holder.get() != NULL ?
-                                          origin_holder->get_addr_from_attr(DW_AT_low_pc) :
-                                          label_holder.get_addr_from_attr(DW_AT_low_pc));
-
-    set_name(low_pc, name.c_str(), SN_CHECK | SN_LOCAL);
-    DEBUG("added a label name='%s' at offset=0x%lx\n", name.c_str(), low_pc);
+    set_name(low_pc, name, SN_CHECK | SN_LOCAL);
+    DEBUG("added a label name='%s' at offset=0x%lx\n", name, low_pc);
   }
 }
 
@@ -286,9 +277,6 @@ void visit_frame_die(DieHolder &die_holder)
     case DW_TAG_subprogram:
       process_subprogram(die_holder);
       break;
-    case DW_TAG_inlined_subroutine:
-      // TODO
-      break;
     case DW_TAG_label:
       process_label(die_holder);
       break;
@@ -298,7 +286,7 @@ void visit_frame_die(DieHolder &die_holder)
   }
 }
 
-void retrieve_frames(Dwarf_Debug dbg, CUsHolder const &cus_holder)
+void retrieve_frames(CUsHolder const &cus_holder)
 {
-  do_dies_traversal(dbg, cus_holder, try_visit_frame_die);
+  do_dies_traversal(cus_holder, try_visit_frame_die);
 }

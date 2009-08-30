@@ -1490,9 +1490,11 @@ static void update_ptr_types(Dwarf_Debug dbg)
   }
 }
 
-void retrieve_types(Dwarf_Debug dbg, CUsHolder const &cus_holder)
+void retrieve_types(CUsHolder const &cus_holder)
 {
-  do_dies_traversal(dbg, cus_holder, try_visit_type_die);
+  Dwarf_Debug dbg = cus_holder.get_dbg();
+
+  do_dies_traversal(cus_holder, try_visit_type_die);
   do_second_pass(dbg);
   update_ptr_types(dbg);
   // TODO: add a 'remove duplicates' pass

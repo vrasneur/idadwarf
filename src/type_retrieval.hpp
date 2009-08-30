@@ -7,6 +7,6 @@ void visit_type_die(DieHolder &die_holder);
 
 TRY_VISIT_DIE(visit_type_die)
 
-void retrieve_types(Dwarf_Debug dbg, CUsHolder const &cus_holder);
+void retrieve_types(CUsHolder const &cus_holder);
 
 #endif // IDADWARF_TYPE_RETRIEVAL_HPP

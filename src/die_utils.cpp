@@ -79,6 +79,8 @@ DieHolder::DieHolder(Dwarf_Debug dbg, Dwarf_Off offset, bool const dealloc_die)
 
 DieHolder::~DieHolder(void) throw()
 {
+  m_origin_holder.reset();
+
   if(m_name != NULL)
   {
     dwarf_dealloc(m_dbg, m_name, DW_DLA_STRING);
@@ -105,16 +107,27 @@ DieHolder::~DieHolder(void) throw()
 
 char const *DieHolder::get_name(void)
 {
-  if(m_name == NULL)
+  char const *name = m_name;
+
+  if(name == NULL)
   {
     Dwarf_Error err = NULL;
 
     // name may be NULL
     CHECK_DWERR2(dwarf_diename(m_die, &m_name, &err) == DW_DLV_ERROR, err,
                  "cannot get DIE name");
+
+    if(m_name != NULL)
+    {
+      name = m_name;
+    }
+    else if(m_origin_holder.get() != NULL)
+    {
+      name = m_origin_holder->get_name();
+    }
   }
 
-  return m_name;
+  return name;
 }
 
 Dwarf_Attribute DieHolder::get_attr(int attr)
@@ -129,7 +142,15 @@ Dwarf_Attribute DieHolder::get_attr(int attr)
     // atribute may be NULL
     CHECK_DWERR2(dwarf_attr(m_die, attr, &attrib, &err) == DW_DLV_ERROR, err,
                  "cannot get DIE attribute %d", attr);
-    m_attrs[attr] = attrib;
+
+    if(attrib != NULL)
+    {
+      m_attrs[attr] = attrib;
+    }
+    else if(m_origin_holder.get() != NULL)
+    {
+      attrib = m_origin_holder->get_attr(attr);
+    }
   }
   else
   {
@@ -137,6 +158,30 @@ Dwarf_Attribute DieHolder::get_attr(int attr)
   }
 
   return attrib;
+}
+
+Dwarf_Signed DieHolder::get_nb_attrs(void)
+{
+  Dwarf_Attribute *attrlist = NULL;
+  Dwarf_Signed nb_attrs = 0;
+  Dwarf_Error err = NULL;
+
+  CHECK_DWERR2(dwarf_attrlist(m_die, &attrlist, &nb_attrs, &err) == DW_DLV_ERROR, err,
+               "error when getting the list of attributes");
+
+  // do not use the attributes
+  // TODO: maybe we can put them in the attributes map later...
+  if(nb_attrs != 0)
+  {
+    for(Dwarf_Signed idx = 0; idx < nb_attrs; ++idx)
+    {
+      dwarf_dealloc(m_dbg, attrlist[idx], DW_DLA_ATTR);
+    }
+
+    dwarf_dealloc(m_dbg, attrlist, DW_DLA_LIST);
+  }
+
+  return nb_attrs;
 }
 
 Dwarf_Addr DieHolder::get_addr_from_attr(int attr)
@@ -434,6 +479,37 @@ Dwarf_Die DieHolder::get_sibling(void)
   return sibling_die;
 }
 
+void DieHolder::enable_abstract_origin(void)
+{
+  if(m_origin_holder.get() == NULL)
+  {
+    Dwarf_Attribute attrib = get_attr(DW_AT_abstract_origin);
+
+    if(attrib != NULL)
+    {
+      Dwarf_Off const offset = get_ref_from_attr(DW_AT_abstract_origin);
+
+      m_origin_holder.reset(new DieHolder(m_dbg, offset));
+
+      // if it is a useless DIE, disable the abstract origin DIE
+      if(m_origin_holder.get() != NULL &&
+         m_origin_holder->get_nb_attrs() == 1)
+      {
+        Dwarf_Die child_die = m_origin_holder->get_child();
+
+        if(child_die == NULL)
+        {
+          m_origin_holder.reset();
+        }
+        else
+        {
+          dwarf_dealloc(m_dbg, child_die, DW_DLA_DIE);
+        }
+      }
+    }
+  }
+}
+
 bool DieHolder::in_cache()
 {
   return diecache.in_cache(get_offset());
@@ -482,9 +558,30 @@ void DieHolder::init(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die)
   m_dealloc_die = dealloc_die;
 }
 
-void do_dies_traversal(Dwarf_Debug dbg, CUsHolder const &cus_holder,
+CUsHolder::~CUsHolder(void) throw()
+{
+  Dwarf_Error err = NULL;
+  int ret = 0;
+
+  for(size_t idx = 0; idx < size(); ++idx)
+  {
+    dwarf_dealloc(m_dbg, (*this)[idx], DW_DLA_DIE);
+    (*this)[idx] = NULL;
+  }
+
+  ret = dwarf_finish(m_dbg, &err);
+  if(ret != DW_DLV_OK)
+  {
+    MSG("libdwarf cleanup failed: %s\n", dwarf_errmsg(err));
+  }
+
+  clear();
+}
+
+void do_dies_traversal(CUsHolder const &cus_holder,
                        die_visitor_fun visit)
 {
+  Dwarf_Debug dbg = cus_holder.get_dbg();
   qstack<Dwarf_Die> stack;
 
   for(size_t idx = 0; idx < cus_holder.size(); ++idx)

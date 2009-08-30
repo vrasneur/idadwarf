@@ -118,6 +118,8 @@ public:
 
   Dwarf_Attribute get_attr(int attr);
 
+  Dwarf_Signed get_nb_attrs(void);
+
   Dwarf_Addr get_addr_from_attr(int attr);
 
   Dwarf_Off get_ref_from_attr(int attr);
@@ -162,6 +164,8 @@ public:
 
   Dwarf_Die get_sibling(void);
 
+  void enable_abstract_origin(void);
+
   // DieCache wrappers
 
   bool in_cache();
@@ -185,6 +189,7 @@ private:
   char *m_name;
   typedef map<int, Dwarf_Attribute> MapAttrs;
   MapAttrs m_attrs;
+  Ptr m_origin_holder;
   bool m_offset_used;
   bool m_dealloc_die;
 
@@ -207,24 +212,11 @@ public:
 
   }
 
-  virtual ~CUsHolder(void) throw()
+  virtual ~CUsHolder(void) throw();
+
+  Dwarf_Debug get_dbg(void) const throw()
   {
-    Dwarf_Error err = NULL;
-    int ret = 0;
-
-    for(size_t idx = 0; idx < size(); ++idx)
-    {
-      dwarf_dealloc(m_dbg, (*this)[idx], DW_DLA_DIE);
-      (*this)[idx] = NULL;
-    }
-
-    ret = dwarf_finish(m_dbg, &err);
-    if(ret != DW_DLV_OK)
-    {
-      MSG("libdwarf cleanup failed: %s\n", dwarf_errmsg(err));
-    }
-
-    clear();
+    return m_dbg;
   }
 
 private:
@@ -254,7 +246,7 @@ typedef void(*die_visitor_fun)(DieHolder &die);
     }                                                      \
   }
 
-void do_dies_traversal(Dwarf_Debug dbg, CUsHolder const &cus_holder,
+void do_dies_traversal(CUsHolder const &cus_holder,
                        die_visitor_fun visit);
 
 #endif // IDADWARF_DIE_UTILS_HPP

@@ -47,8 +47,9 @@ using namespace std;
 DieCache diecache;
 
 // retrieve compilation units
-void retrieve_cus(Dwarf_Debug dbg, CUsHolder &cus_holder)
+void retrieve_cus(CUsHolder &cus_holder)
 {
+  Dwarf_Debug dbg = cus_holder.get_dbg();
   Dwarf_Unsigned cu_header_length = 0;
   Dwarf_Unsigned abbrev_offset = 0;
   Dwarf_Unsigned next_cu_offset = 0;
@@ -143,11 +144,12 @@ void idaapi run(GCC_UNUSED int arg)
     }
     else
     {
+      // dbg will be freed by the CUs holder
       CUsHolder cus_holder(dbg);
 
-      retrieve_cus(dbg, cus_holder);
-      retrieve_types(dbg, cus_holder);
-      retrieve_frames(dbg, cus_holder);
+      retrieve_cus(cus_holder);
+      retrieve_types(cus_holder);
+      retrieve_frames(cus_holder);
 #if 0
       retrieve_macros(dbg);
 #endif
