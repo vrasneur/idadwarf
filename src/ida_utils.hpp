@@ -43,4 +43,6 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal
 
 flags_t fill_typeinfo(typeinfo_t *mt, ulong const ordinal, type_t const **type);
 
+bool replace_func_return(qtype &new_type, qtype const &return_type, type_t const *func_type);
+
 #endif // IDADWARF_IDA_UTILS_HPP

@@ -5,9 +5,11 @@
 #include "struct.hpp"
 #include "area.hpp"
 #include "name.hpp"
+#include "typeinf.hpp"
 
 // local headers
 #include "iterators.hpp"
+#include "ida_utils.hpp"
 
 // TODO: diecache!
 
@@ -127,6 +129,7 @@ static void visit_frame_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
               die_cache cache;
               Dwarf_Off const type_offset = var_holder.get_ref_from_attr(DW_AT_type);
 
+              // TODO: only cache_type
               if(diecache.get_cache(type_offset, &cache))
               {
                 typeinfo_t mt;
@@ -218,6 +221,49 @@ static void process_local_vars(DieHolder &locals_holder, func_t *funptr,
   }
 }
 
+static void add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
+{
+  if(subprogram_holder.get_attr(DW_AT_type) != NULL)
+  {
+    die_cache cache;
+    Dwarf_Off const type_offset = subprogram_holder.get_ref_from_attr(DW_AT_type);
+
+    // TODO: only cache_type
+    if(diecache.get_cache(type_offset, &cache))
+    {
+      type_t const *type = NULL;
+      bool ok =  get_numbered_type(idati, cache.ordinal, &type);
+                
+      if(ok)
+      {
+        // old function type/fields
+        qtype func_type;
+        qtype func_fields;
+        // correct return type
+        qtype return_type;
+        // function type with correct return type
+        qtype new_type;
+        int ret = 0;
+
+        make_new_type(return_type, type, cache.ordinal);
+        ret = guess_func_tinfo(funptr, &func_type, &func_fields);
+        if(ret != GUESS_FUNC_FAILED)
+        {
+          ok = replace_func_return(new_type, return_type, func_type.c_str());
+          if(!ok)
+          {
+            MSG("failed to set the return type for function name='%s'\n", subprogram_holder.get_name());
+          }
+          else
+          {
+            apply_tinfo(idati, funptr->startEA, new_type.c_str(), func_fields.c_str(), 0);
+          }
+        }
+      }
+    }
+  }
+}
+
 static void process_subprogram(DieHolder &subprogram_holder)
 {
   Dwarf_Attribute attrib = subprogram_holder.get_attr(DW_AT_low_pc);
@@ -246,6 +292,13 @@ static void process_subprogram(DieHolder &subprogram_holder)
       subprogram_holder.get_frame_pointer_offsets(offset_areas);
 
       process_local_vars(subprogram_holder, funptr, cu_low_pc, offset_areas);
+
+      // is it the function entry chunk?
+      if(funptr->startEA == low_pc)
+      {
+        // we are really in the right function, set its return type
+        add_subprogram_return(subprogram_holder, funptr);
+      }
     }
   }
 }
