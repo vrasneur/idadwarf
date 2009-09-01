@@ -27,10 +27,10 @@ bool DieCache::get_cache_type(Dwarf_Off const offset, die_cache *cache) throw()
   return ret;
 }
 
-bool DieCache::get_offset(ulong const ordinal, Dwarf_Off *offset) throw()
+bool DieCache::get_offset(sval_t const reverse, die_type const type,
+                          Dwarf_Off *offset) throw()
 {
-  ssize_t const size = m_dies_node.supval(static_cast<sval_t>(ordinal), offset,
-                                          sizeof(*offset), atag);
+  ssize_t const size = m_dies_node.supval(reverse, offset, sizeof(*offset), type);
 
   return (size != -1);
 }
@@ -38,7 +38,7 @@ bool DieCache::get_offset(ulong const ordinal, Dwarf_Off *offset) throw()
 bool DieCache::get_cache_by_ordinal(ulong const ordinal, die_cache *cache) throw()
 {
   Dwarf_Off offset = 0;
-  bool found = get_offset(ordinal, &offset);
+  bool found = get_type_offset(ordinal, &offset);
 
   if(found)
   {
@@ -52,9 +52,58 @@ void DieCache::cache_useless(Dwarf_Off const offset) throw()
 {
   if(!in_cache(offset))
   {
-    die_cache cache = { DIE_USELESS, 0, 0, false };
+    die_cache cache = { DIE_USELESS, { 0 } };
 
     m_dies_node.supset(static_cast<sval_t>(offset), &cache, sizeof(cache));
+  }
+}
+
+void DieCache::cache_useful(Dwarf_Off const offset, sval_t const reverse,
+                            die_cache const *cache) throw()
+{
+  die_cache existing_cache;
+  Dwarf_Off orig_offset = 0;
+  bool ok = get_offset(reverse, cache->type, &orig_offset);
+
+  // already a DIE with the same reverse mapping in cache?
+  if(ok && orig_offset != offset)
+  {
+    ok = get_cache(orig_offset, &existing_cache);
+    if(ok)
+    {
+      nodeidx_t const offset_idx = static_cast<nodeidx_t>(offset);
+
+      // set the same cache infos
+      // but don't touch the existing reverse mapping!
+      m_dies_node.supset(offset_idx, &existing_cache, sizeof(existing_cache));
+    }
+  }
+  else
+  {
+    // is there already an useless cache, overrride it
+    if(get_cache(offset, &existing_cache) &&
+       existing_cache.type != DIE_USELESS)
+    {
+      // should not happen
+      DEBUG("do not do cache for ordinal %lu\n", ordinal);
+    }
+    else
+    {
+      nodeidx_t const offset_idx = static_cast<nodeidx_t>(offset);
+
+      m_dies_node.supset(offset_idx, cache, sizeof(*cache));
+      m_dies_node.altset(reverse, offset_idx, cache->type);
+    }
+  }
+}
+
+void DieCache::cache_func(Dwarf_Off const offset, ea_t const startEA) throw()
+{
+  if(startEA != BADADDR)
+  {
+    die_cache const cache = { DIE_FUNC, { startEA } };
+  
+    cache_useful(offset, static_cast<sval_t>(startEA), &cache);
   }
 }
 
@@ -64,41 +113,13 @@ void DieCache::cache_type(Dwarf_Off const offset, ulong const ordinal,
   if(ordinal != 0 && ordinal != BADADDR)
   {
     die_cache cache;
-    Dwarf_Off orig_offset = 0;
-    bool ok = get_offset(ordinal, &orig_offset);
 
-    // already a DIE with the same ordinal in cache?
-    if(ok && orig_offset != offset)
-    {
-      ok = get_cache(orig_offset, &cache);
-      if(ok)
-      {
-        nodeidx_t const offset_idx = static_cast<nodeidx_t>(offset);
+    cache.type = DIE_TYPE;
+    cache.ordinal = ordinal;
+    cache.second_pass = second_pass;
+    cache.base_ordinal = base_ordinal;
 
-        // set the same cache infos
-        // but don't touch the ordinal -> offset mapping!
-        m_dies_node.supset(offset_idx, &cache, sizeof(cache));
-      }
-    }
-    else
-    {
-      // is there already an useless cache, overrride it
-      if(get_cache(offset, &cache) && cache.type != DIE_USELESS)
-      {
-        DEBUG("do not do cache for ordinal %lu\n", ordinal);
-      }
-      else
-      {
-        nodeidx_t const offset_idx = static_cast<nodeidx_t>(offset);
-
-        cache.type = DIE_TYPE;
-        cache.ordinal = ordinal;
-        cache.base_ordinal = base_ordinal;
-        cache.second_pass = second_pass;
-
-        m_dies_node.supset(offset_idx, &cache, sizeof(cache));
-        m_dies_node.altset(static_cast<sval_t>(ordinal), offset_idx);
-      }
-    }
+    cache_useful(offset, static_cast<sval_t>(ordinal), &cache);
   }
 }
+

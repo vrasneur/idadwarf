@@ -176,6 +176,8 @@ public:
 
   void cache_useless(void);
 
+  void cache_func(ea_t const startEA);
+
   void cache_type(ulong const ordinal, bool second_pass=false, ulong base_ordinal=0);
 
   bool get_ordinal(ulong *ordinal);

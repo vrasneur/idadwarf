@@ -530,6 +530,11 @@ void DieHolder::cache_useless(void)
   diecache.cache_useless(get_offset());
 }
 
+void DieHolder::cache_func(ea_t const startEA)
+{
+  diecache.cache_func(get_offset(), startEA);
+}
+
 void DieHolder::cache_type(ulong const ordinal, bool second_pass, ulong base_ordinal)
 {
   diecache.cache_type(get_offset(), ordinal, second_pass, base_ordinal);

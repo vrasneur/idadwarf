@@ -932,7 +932,7 @@ static tid_t get_other_structure(DieHolder &structure_holder, char const *name,
     {
       Dwarf_Off const offset = structure_holder.get_offset();
       Dwarf_Off other_offset = 0;
-      bool const ok = diecache.get_offset(other_ordinal, &other_offset);
+      bool const ok = diecache.get_type_offset(other_ordinal, &other_offset);
 
       // not the same offsets => different structures
       if(ok && offset != other_offset)
@@ -1481,7 +1481,7 @@ static void update_ptr_types(Dwarf_Debug dbg)
       Dwarf_Off offset = 0;
 
       MSG("failed to update pointer type ordinal=%lu\n", cache->ordinal);
-      ok = diecache.get_offset(cache->ordinal, &offset);
+      ok = diecache.get_type_offset(cache->ordinal, &offset);
       if(ok)
       {
         MSG("-> at offset=0x%" DW_PR_DUx "\n", offset);
