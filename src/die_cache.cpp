@@ -85,7 +85,7 @@ void DieCache::cache_useful(Dwarf_Off const offset, sval_t const reverse,
        existing_cache.type != DIE_USELESS)
     {
       // should not happen
-      DEBUG("do not do cache for ordinal %lu\n", ordinal);
+      DEBUG("do not do cache for ordinal %lu\n", existing_cache.ordinal);
     }
     else
     {

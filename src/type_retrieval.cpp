@@ -914,6 +914,8 @@ static void add_structure_member(DieHolder *member_holder, struc_t *sptr,
       }
     }
   }
+
+  member_holder->cache_useless();
 }
 
 // find if the struct/union being processed is the copy of another one
@@ -1185,6 +1187,7 @@ static void process_subroutine(DieHolder &subroutine_holder)
   {
     MSG("cannot process function type offset=0x%" DW_PR_DUx "\n",
       subroutine_holder.get_offset());
+    subroutine_holder.cache_useless();
   }
   else
   {

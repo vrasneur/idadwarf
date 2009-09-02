@@ -6,12 +6,13 @@
 #include "area.hpp"
 #include "name.hpp"
 #include "typeinf.hpp"
+#include "xref.hpp"
 
 // local headers
 #include "iterators.hpp"
 #include "ida_utils.hpp"
 
-// TODO: diecache!
+// TODO: diecache for variables!
 
 extern DieCache diecache;
 
@@ -221,8 +222,10 @@ static void process_local_vars(DieHolder &locals_holder, func_t *funptr,
   }
 }
 
-static void add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
+static bool add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
 {
+  bool ok = false;
+
   if(subprogram_holder.get_attr(DW_AT_type) != NULL)
   {
     die_cache cache;
@@ -232,7 +235,7 @@ static void add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
     if(diecache.get_cache(type_offset, &cache))
     {
       type_t const *type = NULL;
-      bool ok =  get_numbered_type(idati, cache.ordinal, &type);
+      ok = get_numbered_type(idati, cache.ordinal, &type);
                 
       if(ok)
       {
@@ -247,7 +250,9 @@ static void add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
 
         make_new_type(return_type, type, cache.ordinal);
         ret = guess_func_tinfo(funptr, &func_type, &func_fields);
-        if(ret != GUESS_FUNC_FAILED)
+        ok = (ret != GUESS_FUNC_FAILED);
+
+        if(ok)
         {
           ok = replace_func_return(new_type, return_type, func_type.c_str());
           if(!ok)
@@ -262,11 +267,14 @@ static void add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
       }
     }
   }
+
+  return ok;
 }
 
 static void process_subprogram(DieHolder &subprogram_holder)
 {
   Dwarf_Attribute attrib = subprogram_holder.get_attr(DW_AT_low_pc);
+  bool ok = false;
 
   // ignore potentially inlined functions for now
   if(attrib != NULL)
@@ -297,9 +305,20 @@ static void process_subprogram(DieHolder &subprogram_holder)
       if(funptr->startEA == low_pc)
       {
         // we are really in the right function, set its return type
-        add_subprogram_return(subprogram_holder, funptr);
+        ok = add_subprogram_return(subprogram_holder, funptr);
+        if(ok)
+        {
+          DEBUG("added function name='%s' offset=%lu\n",
+                subprogram_holder.get_name(), funptr->startEA);
+          subprogram_holder.cache_func(funptr->startEA);
+        }
       }
     }
+  }
+
+  if(!ok)
+  {
+    subprogram_holder.cache_useless();
   }
 }
 
@@ -317,6 +336,8 @@ void process_label(DieHolder &label_holder)
     set_name(low_pc, name, SN_CHECK | SN_LOCAL);
     DEBUG("added a label name='%s' at offset=0x%lx\n", name, low_pc);
   }
+
+  label_holder.cache_useless();
 }
 
 void visit_frame_die(DieHolder &die_holder)
@@ -339,7 +360,41 @@ void visit_frame_die(DieHolder &die_holder)
   }
 }
 
+void add_callee_types(void)
+{
+  for(CacheIterator iter(DIE_FUNC); *iter != NULL; ++iter)
+  {
+    die_cache const *cache = *iter;
+    func_t *funptr = get_func(cache->startEA);
+
+    if(funptr != NULL)
+    {
+      qtype func_type;
+      qtype func_fields;
+      int const ret = guess_func_tinfo(funptr, &func_type, &func_fields);
+
+      if(ret != GUESS_FUNC_FAILED)
+      {
+        xrefblk_t xref;
+
+        for(bool ok = xref.first_to(cache->startEA, XREF_ALL);
+            ok; ok = xref.next_to())
+        {
+          if(xref.type == fl_CN || xref.type == fl_CF)
+          {
+            // appears to only work when "push"ing arguments to the stack
+            // not when "mov"ing them at [esp+offset]
+            apply_callee_type(xref.from, func_type.c_str(), func_fields.c_str());
+            DEBUG("applied callee type at 0x%lx\n", xref.from);
+          }
+        }
+      }
+    }
+  }
+}
+
 void retrieve_frames(CUsHolder const &cus_holder)
 {
   do_dies_traversal(cus_holder, try_visit_frame_die);
+  add_callee_types();
 }
