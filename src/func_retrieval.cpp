@@ -1,4 +1,4 @@
-#include "frame_retrieval.hpp"
+#include "func_retrieval.hpp"
 
 // IDA headers
 #include "frame.hpp"
@@ -17,7 +17,7 @@
 extern DieCache diecache;
 
 // TODO: stack var with fpo-based functions
-static void visit_frame_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
+static void visit_local_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
                             func_t *funptr, ea_t const cu_low_pc,
                             OffsetAreas const &offset_areas)
 {
@@ -130,8 +130,13 @@ static void visit_frame_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
               die_cache cache;
               Dwarf_Off const type_offset = var_holder.get_ref_from_attr(DW_AT_type);
 
-              // TODO: only cache_type
-              if(diecache.get_cache(type_offset, &cache))
+              if(!diecache.get_cache_type(type_offset, &cache))
+              {
+                MSG("cannot retrieve type offset=0x%" DW_PR_DUx, type_offset);
+                msg(" for frame variable name='%s' offset=0x%" DW_PR_DUx "\n", 
+                    var_name, var_holder.get_offset());
+              }
+              else
               {
                 typeinfo_t mt;
                 type_t const *type = NULL;
@@ -192,7 +197,7 @@ static void process_local_vars(DieHolder &locals_holder, func_t *funptr,
 
     param_holder->enable_abstract_origin();
     param_holder->retrieve_var(funptr, cu_low_pc, offset_areas,
-                               visit_frame_var);
+                               visit_local_var);
   }
 
   for(DieChildIterator iter(locals_holder, DW_TAG_variable);
@@ -202,7 +207,7 @@ static void process_local_vars(DieHolder &locals_holder, func_t *funptr,
 
     var_holder->enable_abstract_origin();
     var_holder->retrieve_var(funptr, cu_low_pc, offset_areas,
-                             visit_frame_var);
+                             visit_local_var);
   }
 
   for(DieChildIterator iter(locals_holder, DW_TAG_inlined_subroutine);
@@ -231,8 +236,13 @@ static bool add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
     die_cache cache;
     Dwarf_Off const type_offset = subprogram_holder.get_ref_from_attr(DW_AT_type);
 
-    // TODO: only cache_type
-    if(diecache.get_cache(type_offset, &cache))
+    if(!diecache.get_cache_type(type_offset, &cache))
+    {
+      MSG("cannot retrieve return type offset=0x%" DW_PR_DUx, type_offset);
+      msg(" for function name='%s' offset=0x%" DW_PR_DUx "\n", 
+          subprogram_holder.get_name(), subprogram_holder.get_offset());
+    }
+    else
     {
       type_t const *type = NULL;
       ok = get_numbered_type(idati, cache.ordinal, &type);
@@ -340,7 +350,7 @@ void process_label(DieHolder &label_holder)
   label_holder.cache_useless();
 }
 
-void visit_frame_die(DieHolder &die_holder)
+void visit_func_die(DieHolder &die_holder)
 {
   if(!die_holder.in_cache())
   {
@@ -393,8 +403,8 @@ void add_callee_types(void)
   }
 }
 
-void retrieve_frames(CUsHolder const &cus_holder)
+void retrieve_funcs(CUsHolder const &cus_holder)
 {
-  do_dies_traversal(cus_holder, try_visit_frame_die);
+  do_dies_traversal(cus_holder, try_visit_func_die);
   add_callee_types();
 }

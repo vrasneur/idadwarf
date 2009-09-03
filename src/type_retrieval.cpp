@@ -217,6 +217,13 @@ public:
     return m_struc_id;
   }
 
+  ulong get_ordinal(void) const throw()
+  {
+    struc_t *sptr = get_struc(m_struc_id);
+
+    return (sptr == NULL) ? 0 : sptr->ordinal;
+  }
+
   bool equal(DieHolder &structure_holder)
   {
     bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
@@ -329,7 +336,8 @@ static enum_t add_dup_enum(DieHolder &enumeration_holder,
 }
 
 // add a struct/union even if its name already exists
-static tid_t add_dup_struc(DieHolder &structure_holder, char const *name)
+static tid_t add_dup_struc(DieHolder &structure_holder, char const *name,
+                           ulong *ordinal)
 {
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
   tid_t struc_id = add_struc(BADADDR, name, is_union);
@@ -349,6 +357,7 @@ static tid_t add_dup_struc(DieHolder &structure_holder, char const *name)
       if(struc_cmp.equal(structure_holder))
       {
         struc_id = struc_cmp.get_struc_id();
+        *ordinal = struc_cmp.get_ordinal();
       }
       else
       {
@@ -926,7 +935,14 @@ static tid_t get_other_structure(DieHolder &structure_holder, char const *name,
   tid_t other_id = get_struc_id(name);
   struc_t *sptr = get_struc(other_id);
 
-  if(sptr != NULL)
+  // this edge case happens when there is already
+  // a function with the same name as the structure
+  // being processed. Just generate another name for the struct.
+  if(other_id != BADNODE && sptr == NULL)
+  {
+    struc_id = add_dup_struc(structure_holder, name, ordinal);
+  }
+  else if(sptr != NULL)
   {
     ulong const other_ordinal = static_cast<ulong>(sptr->ordinal);
 
@@ -948,7 +964,7 @@ static tid_t get_other_structure(DieHolder &structure_holder, char const *name,
         else
         {
           // generate a new name for the struct/union
-          struc_id = add_dup_struc(structure_holder, name);
+          struc_id = add_dup_struc(structure_holder, name, ordinal);
         }
       }
     }
