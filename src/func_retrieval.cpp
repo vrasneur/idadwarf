@@ -96,7 +96,7 @@ static bool process_register_var(DieHolder &var_holder, Dwarf_Locdesc const *loc
       int const ret = add_regvar(funptr, locdesc->ld_lopc + cu_low_pc, locdesc->ld_hipc + cu_low_pc,
                                  reg_name, var_name, NULL);
       ok = (ret == REGVAR_ERROR_OK);
-      DEBUG("applied reg_name='%s'for var_name='%s'\n", reg_name, var_name);
+      DEBUG("applied register name='%s'for variable name='%s'\n", reg_name, var_name);
     }
   }
 
@@ -209,6 +209,8 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
                   }
                 }
 
+                DEBUG("found type for stack var name='%s' offset=0x%" DW_PR_DUx "\n",
+                      var_name, var_holder.get_offset());
                 type_found = true;
               }
             }
@@ -241,6 +243,8 @@ static bool process_func_static_var(DieHolder &var_holder, Dwarf_Locdesc const *
   else
   {
     add_long_cmt(addr, true, "function static variable");
+    DEBUG("added a function static variable name='%s' offset=0x%" DW_PR_DUx "\n",
+          var_holder.get_name(), var_holder.get_offset());
   }
 
   return ok;

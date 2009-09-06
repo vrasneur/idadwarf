@@ -21,6 +21,9 @@ void process_global_var(DieHolder &var_holder)
         Dwarf_Bool const is_global = var_holder.get_attr_flag(DW_AT_external);
 
         add_long_cmt(addr, true, "%s variable", is_global ? "global" : "static");
+        DEBUG("added a %s variable name='%s' offset=0x%" DW_PR_DUx "\n",
+              is_global ? "global" : "static", var_holder.get_name(), var_holder.get_offset());
+        var_holder.cache_var(VAR_GLOBAL);
       }
     }
 
@@ -28,6 +31,7 @@ void process_global_var(DieHolder &var_holder)
     {
       MSG("failed to add global/static variable name='%s' offset=0x%" DW_PR_DUx "\n",
           var_holder.get_name(), var_holder.get_offset());
+      var_holder.cache_useless();
     }
   }
 }
