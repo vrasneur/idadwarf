@@ -103,6 +103,37 @@ static bool process_register_var(DieHolder &var_holder, Dwarf_Locdesc const *loc
   return ok;
 }
 
+void set_stack_var_type_cmt(struc_t *fptr, char const *var_name)
+{
+  member_t *mptr = get_member_by_name(fptr, var_name);
+
+  if(mptr != NULL)
+  {
+    qtype type;
+    qtype fields;
+    bool const ok = get_member_tinfo(mptr, &type, &fields);
+
+    if(ok)
+    {
+      // dynamic type string failed (returns T_SHORTSTR)
+      // so allocate a huge buffer on the stack...
+      char buf[MAXSTR];
+      int const ret = print_type_to_one_line(buf, sizeof(buf), idati, type.c_str(), var_name,
+                                       NULL, fields.c_str(), NULL);
+
+      if(ret < 0)
+      {
+        MSG("cannot get the formatted type for stack variable name='%s' ret=%d\n",
+            var_name, ret);
+      }
+      else
+      {
+        set_struc_cmt(mptr->id, buf, true);
+      }
+    }
+  }
+}
+
 static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
                               func_t *funptr, OffsetAreas const &offset_areas)
 {
@@ -209,6 +240,7 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
                   }
                 }
 
+                set_stack_var_type_cmt(fptr, var_name);
                 DEBUG("found type for stack var name='%s' offset=0x%" DW_PR_DUx "\n",
                       var_name, var_holder.get_offset());
                 type_found = true;
