@@ -5,4 +5,8 @@
 
 #define PLUGIN_HOTKEY "ALT-F9"
 
+// only to overcome a namespace problem
+// I swear I don't use dangerous functions
+#define USE_DANGEROUS_FUNCTIONS
+
 #endif // IDADWARF_DEFS_HPP

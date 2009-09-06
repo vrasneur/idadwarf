@@ -18,9 +18,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-// only to overcome a namespace problem
-// I swear I don't use dangerous functions
-#define USE_DANGEROUS_FUNCTIONS
+// local definitions
+#include "defs.hpp"
 
 // IDA headers
 #include <ida.hpp>
@@ -33,12 +32,12 @@
 
 // local headers
 #include "gcc_defs.hpp"
-#include "defs.hpp"
 #include "ida_utils.hpp"
 #include "die_cache.hpp"
 #include "die_utils.hpp"
 #include "type_retrieval.hpp"
 #include "func_retrieval.hpp"
+#include "global_retrieval.hpp"
 #include "macro_retrieval.hpp"
 
 using namespace std;
@@ -150,6 +149,7 @@ void idaapi run(GCC_UNUSED int arg)
       retrieve_cus(cus_holder);
       retrieve_types(cus_holder);
       retrieve_funcs(cus_holder);
+      retrieve_globals(cus_holder);
 #if 0
       retrieve_macros(dbg);
 #endif

@@ -15,6 +15,9 @@ using namespace std;
 
 enum die_type { DIE_USELESS, DIE_TYPE, DIE_FUNC, DIE_VAR };
 
+enum var_type { VAR_USELESS, VAR_REGISTER, VAR_STACK,
+                VAR_FUNC_STATIC, VAR_STATIC, VAR_GLOBAL };
+
 struct die_cache
 {
   die_type type; // see above
@@ -27,8 +30,14 @@ struct die_cache
       bool second_pass; // cannot get the complete type
       ulong base_ordinal; // ordinal of the type without any modifiers
     };
-    // DIE_FUNC/DIE_VAR specific member
+    // DIE_FUNC specific member
     ea_t startEA;
+    // DIE_VAR specific member
+    struct
+    {
+      var_type vtype;
+      ea_t func_startEA;
+    };
   };
 };
 
@@ -85,10 +94,13 @@ public:
 
   void cache_useless(Dwarf_Off const offset) throw();
 
-  void cache_func(Dwarf_Off const offset, ea_t const startEA) throw();
-
   void cache_type(Dwarf_Off const offset, ulong const ordinal,
                   bool second_pass=false, ulong base_ordinal=0) throw();
+
+  void cache_func(Dwarf_Off const offset, ea_t const startEA) throw();
+
+  void cache_var(Dwarf_Off const offset, var_type const type,
+                 ea_t const func_startEA=BADADDR) throw();
 
 private:
 // DIEs cache (ordered by offset in .debug_info)

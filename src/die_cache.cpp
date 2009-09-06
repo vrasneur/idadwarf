@@ -97,16 +97,6 @@ void DieCache::cache_useful(Dwarf_Off const offset, sval_t const reverse,
   }
 }
 
-void DieCache::cache_func(Dwarf_Off const offset, ea_t const startEA) throw()
-{
-  if(startEA != BADADDR)
-  {
-    die_cache const cache = { DIE_FUNC, { startEA } };
-  
-    cache_useful(offset, static_cast<sval_t>(startEA), &cache);
-  }
-}
-
 void DieCache::cache_type(Dwarf_Off const offset, ulong const ordinal,
                           bool second_pass, ulong base_ordinal) throw()
 {
@@ -123,3 +113,24 @@ void DieCache::cache_type(Dwarf_Off const offset, ulong const ordinal,
   }
 }
 
+void DieCache::cache_func(Dwarf_Off const offset, ea_t const startEA) throw()
+{
+  if(startEA != BADADDR)
+  {
+    die_cache const cache = { DIE_FUNC, { startEA } };
+  
+    cache_useful(offset, static_cast<sval_t>(startEA), &cache);
+  }
+}
+
+void DieCache::cache_var(Dwarf_Off const offset, var_type const type,
+                         ea_t const func_startEA) throw()
+{
+  die_cache cache;
+
+  cache.type = DIE_VAR;
+  cache.vtype = type;
+  cache.func_startEA = func_startEA;
+
+  cache_useful(offset, static_cast<sval_t>(func_startEA), &cache);
+}

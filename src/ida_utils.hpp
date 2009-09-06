@@ -1,6 +1,9 @@
 #ifndef IDADWARF_IDA_UTILS_HPP
 #define IDADWARF_IDA_UTILS_HPP
 
+// local definitions
+#include "defs.hpp"
+
 // IDA headers
 #include <ida.hpp>
 #include <nalt.hpp>
@@ -8,7 +11,6 @@
 
 // local headers
 #include "gcc_defs.hpp"
-#include "defs.hpp"
 
 // enable format string warnings
 extern int msg(char const *format, ...) GCC_PRINTF(1, 2);
@@ -44,5 +46,7 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal
 flags_t fill_typeinfo(typeinfo_t *mt, ulong const ordinal, type_t const **type);
 
 bool replace_func_return(qtype &new_type, qtype const &return_type, type_t const *func_type);
+
+bool apply_type_ordinal(ea_t const addr, ulong const ordinal);
 
 #endif // IDADWARF_IDA_UTILS_HPP

@@ -228,3 +228,23 @@ bool replace_func_return(qtype &new_type, qtype const &return_type, type_t const
 
   return ret;
 }
+
+bool apply_type_ordinal(ea_t const addr, ulong const ordinal)
+{
+  type_t const *type = NULL;
+  bool ok = get_numbered_type(idati, ordinal, &type);
+
+  if(ok)
+  {
+    // WORKAROUND: apply_tinfo crashes when applying
+    // some complex types (even if fields are provided).
+    // make a wrapper type for now.
+    qtype new_type;
+
+    make_new_type(new_type, type, ordinal);
+
+    ok = apply_tinfo(idati, addr, new_type.c_str(), NULL, 0);
+  }
+
+  return ok;
+}

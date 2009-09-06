@@ -396,6 +396,22 @@ Dwarf_Signed DieHolder::get_attr_small_val(int attr)
   return val;
 }
 
+Dwarf_Bool DieHolder::get_attr_flag(int attr)
+{
+  Dwarf_Attribute attrib = get_attr(attr);
+  Dwarf_Bool flag = (attrib != NULL); 
+
+  if(flag)
+  {
+    Dwarf_Error err = NULL;
+
+    CHECK_DWERR(dwarf_formflag(attrib, &flag, &err), err,
+                "cannot retrieve flag from attr %d", attr);
+  }
+
+  return flag;
+}
+
 Dwarf_Unsigned DieHolder::get_bytesize(void)
 {
   Dwarf_Unsigned bytesize = 0;
@@ -530,14 +546,19 @@ void DieHolder::cache_useless(void)
   diecache.cache_useless(get_offset());
 }
 
+void DieHolder::cache_type(ulong const ordinal, bool second_pass, ulong base_ordinal)
+{
+  diecache.cache_type(get_offset(), ordinal, second_pass, base_ordinal);
+}
+
 void DieHolder::cache_func(ea_t const startEA)
 {
   diecache.cache_func(get_offset(), startEA);
 }
 
-void DieHolder::cache_type(ulong const ordinal, bool second_pass, ulong base_ordinal)
+void DieHolder::cache_var(var_type const type, ea_t const func_startEA)
 {
-  diecache.cache_type(get_offset(), ordinal, second_pass, base_ordinal);
+  diecache.cache_var(get_offset(), type, func_startEA);
 }
 
 bool DieHolder::get_ordinal(ulong *ordinal)

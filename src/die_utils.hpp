@@ -7,8 +7,8 @@
 #include <sstream>
 
 // IDA headers
-#include "ida.hpp"
-#include "area.hpp"
+#include <ida.hpp>
+#include <area.hpp>
 
 // additional libs headers
 #include <dwarf.h>
@@ -145,10 +145,17 @@ public:
 
   void get_frame_pointer_offsets(OffsetAreas &offset_areas);
 
+  bool get_var_addr(Dwarf_Unsigned *addr)
+  {
+    return get_operand(DW_AT_location, 0, DW_OP_addr, addr, true);
+  }
+
   void retrieve_var(func_t *funptr, ea_t const cu_low_pc,
                     OffsetAreas const &offset_areas, var_visitor_fun visit);
 
   Dwarf_Signed get_attr_small_val(int attr);
+
+  Dwarf_Bool get_attr_flag(int attr);
 
   Dwarf_Unsigned get_bytesize(void);
 
@@ -176,9 +183,11 @@ public:
 
   void cache_useless(void);
 
+  void cache_type(ulong const ordinal, bool second_pass=false, ulong base_ordinal=0);
+
   void cache_func(ea_t const startEA);
 
-  void cache_type(ulong const ordinal, bool second_pass=false, ulong base_ordinal=0);
+  void cache_var(var_type const type, ea_t const func_startEA=BADADDR);
 
   bool get_ordinal(ulong *ordinal);
 
