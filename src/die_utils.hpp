@@ -191,6 +191,10 @@ public:
 
   bool get_ordinal(ulong *ordinal);
 
+  bool get_type_ordinal(ulong *ordinal);
+
+  char *get_type_comment(void) GCC_MALLOC;
+
   typedef auto_ptr<DieHolder> Ptr;
 
 private:

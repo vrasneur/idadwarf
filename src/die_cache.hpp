@@ -70,6 +70,8 @@ public:
 
   bool get_cache_type(Dwarf_Off const offset, die_cache *cache) throw();
 
+  bool get_cache_type_ordinal(Dwarf_Off const offset, ulong *ordinal);
+
   bool get_offset(sval_t const reverse, die_type const type,
                   Dwarf_Off *offset) throw();
 

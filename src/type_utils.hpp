@@ -103,5 +103,4 @@ tid_t add_dup_struc(DieHolder &structure_holder, char const *name,
 
 bool apply_die_type(DieHolder &die_holder, ea_t const addr);
 
-
 #endif // IDADWARF_TYPE_UTILS_HPP

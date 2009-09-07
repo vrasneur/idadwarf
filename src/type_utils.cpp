@@ -312,23 +312,17 @@ tid_t add_dup_struc(DieHolder &structure_holder, char const *name,
 
 bool apply_die_type(DieHolder &die_holder, ea_t const addr)
 {
-  bool ok = false;
+  ulong ordinal = 0;
+  bool ok = die_holder.get_type_ordinal(&ordinal);
 
-  if(die_holder.get_attr(DW_AT_type) != NULL)
+  if(!ok)
   {
-    die_cache cache;
-    Dwarf_Off const type_offset = die_holder.get_ref_from_attr(DW_AT_type);
-
-    if(!diecache.get_cache_type(type_offset, &cache))
-    {
-      MSG("cannot retrieve type offset=0x%" DW_PR_DUx, type_offset);
-      msg(" for DIE at offset=0x%" DW_PR_DUx "\n", 
+      MSG("cannot retrieve type offset for DIE at offset=0x%" DW_PR_DUx "\n", 
           die_holder.get_offset());
-    }
-    else
-    {
-      ok = apply_type_ordinal(addr, cache.ordinal);
-    }
+  }
+  else
+  {
+    ok = apply_type_ordinal(addr, ordinal);
   }
 
   return ok;

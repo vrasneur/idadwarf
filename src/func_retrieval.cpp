@@ -94,8 +94,15 @@ static bool process_register_var(DieHolder &var_holder, Dwarf_Locdesc const *loc
   {
     if(locdesc->ld_from_loclist)
     {
+      char *comment = var_holder.get_type_comment();
       int const ret = add_regvar(funptr, locdesc->ld_lopc + cu_low_pc, locdesc->ld_hipc + cu_low_pc,
-                                 reg_name, var_name, NULL);
+                                 reg_name, var_name, comment);
+
+      if(comment != NULL)
+      {
+        qfree(comment), comment = NULL;
+      }
+
       ok = (ret == REGVAR_ERROR_OK);
       DEBUG("applied register name='%s'for variable name='%s'\n", reg_name, var_name);
     }
@@ -136,7 +143,7 @@ void set_stack_var_type_cmt(struc_t *fptr, char const *var_name)
 
     if(ok)
     {
-      // dynamic type string failed (returns T_SHORTSTR)
+      // dynamic type string allocation does not work (returns T_SHORTSTR)
       // so allocate a huge buffer on the stack...
       char buf[MAXSTR];
       int const ret = print_type_to_one_line(buf, sizeof(buf), idati, type.c_str(), var_name,
@@ -212,64 +219,59 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
         // we got the variable offset in the stack
         // get its type now
         bool type_found = false;
+        ulong ordinal = 0;
 
-        if(var_holder.get_attr(DW_AT_type) != NULL)
+        if(!var_holder.get_type_ordinal(&ordinal))
         {
-          die_cache cache;
-          Dwarf_Off const type_offset = var_holder.get_ref_from_attr(DW_AT_type);
+          MSG("cannot retrieve type offset for frame variable "
+              "name='%s' offset=0x%" DW_PR_DUx "\n", 
+              var_name, var_holder.get_offset());
+        }
+        else
+        {
+          typeinfo_t mt;
+          type_t const *type = NULL;
+          flags_t flags = fill_typeinfo(&mt, ordinal, &type);
 
-          if(!diecache.get_cache_type(type_offset, &cache))
+          if(type != NULL)
           {
-            MSG("cannot retrieve type offset=0x%" DW_PR_DUx, type_offset);
-            msg(" for frame variable name='%s' offset=0x%" DW_PR_DUx "\n", 
-                var_name, var_holder.get_offset());
-          }
-          else
-          {
-            typeinfo_t mt;
-            type_t const *type = NULL;
-            flags_t flags = fill_typeinfo(&mt, cache.ordinal, &type);
+            // override type size for structs (we get an error if we don't do that...)
+            size_t const size = (flags == struflag() ? get_struc_size(mt.tid) :
+                                 get_type_size0(idati, type));
 
-            if(type != NULL)
+            if(size == BADSIZE)
             {
-              // override type size for structs (we get an error if we don't do that...)
-              size_t const size = (flags == struflag() ? get_struc_size(mt.tid) :
-                                   get_type_size0(idati, type));
-
-              if(size == BADSIZE)
+              MSG("cannot get size of stack frame var name='%s'\n", var_name);
+            }
+            else
+            {
+              if(flags != 0)
               {
-                MSG("cannot get size of stack frame var name='%s'\n", var_name);
+                ok = add_stkvar2(funptr, var_name, offset, 0, &mt, size);
+                if(ok)
+                {
+                  set_stack_var_complex_type(fptr, var_name);
+                }
               }
               else
               {
-                if(flags != 0)
+                // not a struct/union nor an enum
+                ok = add_stkvar2(funptr, var_name, offset, flags, NULL, size);
+
+                if(ok)
                 {
-                  ok = add_stkvar2(funptr, var_name, offset, 0, &mt, size);
-                  if(ok)
+                  member_t *mptr = get_member_by_name(fptr, var_name);
+                  if(mptr != NULL)
                   {
-                    set_stack_var_complex_type(fptr, var_name);
+                    ok = set_member_tinfo(idati, fptr, mptr, 0, type, NULL, 0);
                   }
                 }
-                else
-                {
-                  // not a struct/union nor an enum
-                  ok = add_stkvar2(funptr, var_name, offset, flags, NULL, size);
-
-                  if(ok)
-                  {
-                    member_t *mptr = get_member_by_name(fptr, var_name);
-                    if(mptr != NULL)
-                    {
-                      ok = set_member_tinfo(idati, fptr, mptr, 0, type, NULL, 0);
-                    }
-                  }
-                }
-
-                set_stack_var_type_cmt(fptr, var_name);
-                DEBUG("found type for stack var name='%s' offset=0x%" DW_PR_DUx "\n",
-                      var_name, var_holder.get_offset());
-                type_found = true;
               }
+
+              set_stack_var_type_cmt(fptr, var_name);
+              DEBUG("found type for stack var name='%s' offset=0x%" DW_PR_DUx "\n",
+                    var_name, var_holder.get_offset());
+              type_found = true;
             }
           }
         }
@@ -399,33 +401,33 @@ static bool add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
 
   if(subprogram_holder.get_attr(DW_AT_type) == NULL)
   {
-    // function has no return type (that is... void)
+    // function has no return type (that is... returns void)
     return_type.append(BTF_VOID);
     ok = true;
   }
   else
   {
-    die_cache cache;
-    Dwarf_Off const type_offset = subprogram_holder.get_ref_from_attr(DW_AT_type);
+    ulong ordinal = 0;
 
-    if(!diecache.get_cache_type(type_offset, &cache))
+    if(!subprogram_holder.get_type_ordinal(&ordinal))
     {
-      MSG("cannot retrieve return type offset=0x%" DW_PR_DUx, type_offset);
-      msg(" for function name='%s' offset=0x%" DW_PR_DUx "\n", 
+      MSG("cannot retrieve return type"
+          " for function name='%s' offset=0x%" DW_PR_DUx "\n", 
           subprogram_holder.get_name(), subprogram_holder.get_offset());
     }
     else
     {
       type_t const *type = NULL;
-      ok = get_numbered_type(idati, cache.ordinal, &type);
+      ok = get_numbered_type(idati, ordinal, &type);
 
       if(ok)
       {
-        make_new_type(return_type, type, cache.ordinal);
+        make_new_type(return_type, type, ordinal);
       }
     }
   }
 
+  // correct return type has been filled?
   if(ok)
   {
     // old function type/fields
@@ -542,7 +544,7 @@ void visit_func_die(DieHolder &die_holder)
   }
 }
 
-void my_apply_callee_type(ea_t const call_addr)
+void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
 {
 #if 0
   decode_prev_insn(call_addr);
@@ -556,6 +558,8 @@ void my_apply_callee_type(ea_t const call_addr)
     {
       MSG("at 0x%lx", cmd.ea);
       msg(", ins: %lu\n", first_op.addr);
+      sval_t spd = get_spd(funptr, cmd.ea);
+      MSG("spd: %ld\n", spd);
     }
   }
 #undef NN_mov
@@ -588,7 +592,7 @@ void add_callee_types(void)
             // not when "mov"ing them at [esp+offset]
             apply_callee_type(xref.from, func_type.c_str(), func_fields.c_str());
             DEBUG("applied callee type at 0x%lx\n", xref.from);
-            my_apply_callee_type(xref.from);
+            my_apply_callee_type(funptr, xref.from);
           }
         }
       }

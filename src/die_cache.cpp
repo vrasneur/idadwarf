@@ -27,6 +27,19 @@ bool DieCache::get_cache_type(Dwarf_Off const offset, die_cache *cache) throw()
   return ret;
 }
 
+bool DieCache::get_cache_type_ordinal(Dwarf_Off const offset, ulong *ordinal)
+{
+  die_cache cache;
+  bool const ok = get_cache_type(offset, &cache);
+
+  if(ok)
+  {
+    *ordinal = cache.ordinal;
+  }
+
+  return ok;
+}
+
 bool DieCache::get_offset(sval_t const reverse, die_type const type,
                           Dwarf_Off *offset) throw()
 {

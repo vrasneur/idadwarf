@@ -574,6 +574,54 @@ bool DieHolder::get_ordinal(ulong *ordinal)
   return found;
 }
 
+bool DieHolder::get_type_ordinal(ulong *ordinal)
+{
+  bool found = false;
+
+  if(get_attr(DW_AT_type) != NULL)
+  {
+    Dwarf_Off const type_offset = get_ref_from_attr(DW_AT_type);
+
+    found = diecache.get_cache_type_ordinal(type_offset, ordinal);
+  }
+
+  return found;
+}
+
+char *DieHolder::get_type_comment(void)
+{
+  char *comment = NULL;
+  ulong ordinal = 0;
+
+  if(get_type_ordinal(&ordinal))
+  {
+    type_t const *type = NULL;
+    p_list const *fields = NULL;
+    bool const found = get_numbered_type(idati, ordinal, &type, &fields);
+
+    if(found)
+    {      
+      // dynamic type string allocation does not work (returns T_SHORTSTR)
+      // so allocate a huge buffer on the stack...
+      char buf[MAXSTR];
+      int const ret = print_type_to_one_line(buf, sizeof(buf), idati, type, get_name(),
+                                             NULL, fields, NULL);
+      if(ret >= 0);
+      {
+        size_t len = strlen(buf);
+        comment = static_cast<char *>(qalloc(len + 1));
+
+        if(comment != NULL)
+        {
+          memcpy(comment, buf, len + 1);
+        }
+      }
+    }
+  }
+
+  return comment;
+}
+
 void DieHolder::init(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die)
 {
   m_dbg = dbg;
