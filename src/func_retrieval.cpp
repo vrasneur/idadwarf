@@ -8,6 +8,7 @@
 #include <typeinf.hpp>
 #include <xref.hpp>
 #include <lines.hpp>
+#include <ua.hpp>
 
 // local headers
 #include "iterators.hpp"
@@ -103,6 +104,25 @@ static bool process_register_var(DieHolder &var_holder, Dwarf_Locdesc const *loc
   return ok;
 }
 
+void set_stack_var_complex_type(struc_t *fptr, char const *var_name)
+{
+  member_t *mptr = get_member_by_name(fptr, var_name);
+
+  if(mptr != NULL)
+  {
+    qtype guessed_type;
+    qtype guessed_fields;
+
+    // guess_func_tinfo fails if we don't use the guessed types
+    // instead of the normal ones
+    bool const ok = get_or_guess_member_tinfo(mptr, &guessed_type, &guessed_fields);
+    if(ok)
+    {
+      set_member_tinfo(idati, fptr, mptr, 0, guessed_type.c_str(), guessed_fields.c_str(), 0);
+    }
+  }
+}
+
 void set_stack_var_type_cmt(struc_t *fptr, char const *var_name)
 {
   member_t *mptr = get_member_by_name(fptr, var_name);
@@ -111,7 +131,8 @@ void set_stack_var_type_cmt(struc_t *fptr, char const *var_name)
   {
     qtype type;
     qtype fields;
-    bool const ok = get_member_tinfo(mptr, &type, &fields);
+    
+    bool const ok = get_or_guess_member_tinfo(mptr, &type, &fields);
 
     if(ok)
     {
@@ -223,7 +244,11 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
               {
                 if(flags != 0)
                 {
-                  ok = add_stkvar2(funptr, var_name, offset, flags, &mt, size);
+                  ok = add_stkvar2(funptr, var_name, offset, 0, &mt, size);
+                  if(ok)
+                  {
+                    set_stack_var_complex_type(fptr, var_name);
+                  }
                 }
                 else
                 {
@@ -369,8 +394,16 @@ static void process_func_vars(DieHolder &locals_holder, func_t *funptr,
 static bool add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
 {
   bool ok = false;
+  // correct return type
+  qtype return_type;
 
-  if(subprogram_holder.get_attr(DW_AT_type) != NULL)
+  if(subprogram_holder.get_attr(DW_AT_type) == NULL)
+  {
+    // function has no return type (that is... void)
+    return_type.append(BTF_VOID);
+    ok = true;
+  }
+  else
   {
     die_cache cache;
     Dwarf_Off const type_offset = subprogram_holder.get_ref_from_attr(DW_AT_type);
@@ -385,34 +418,34 @@ static bool add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
     {
       type_t const *type = NULL;
       ok = get_numbered_type(idati, cache.ordinal, &type);
-                
+
       if(ok)
       {
-        // old function type/fields
-        qtype func_type;
-        qtype func_fields;
-        // correct return type
-        qtype return_type;
-        // function type with correct return type
-        qtype new_type;
-        int ret = 0;
-
         make_new_type(return_type, type, cache.ordinal);
-        ret = guess_func_tinfo(funptr, &func_type, &func_fields);
-        ok = (ret != GUESS_FUNC_FAILED);
+      }
+    }
+  }
 
-        if(ok)
-        {
-          ok = replace_func_return(new_type, return_type, func_type.c_str());
-          if(!ok)
-          {
-            MSG("failed to set the return type for function name='%s'\n", subprogram_holder.get_name());
-          }
-          else
-          {
-            ok = apply_tinfo(idati, funptr->startEA, new_type.c_str(), func_fields.c_str(), 0);
-          }
-        }
+  if(ok)
+  {
+    // old function type/fields
+    qtype func_type;
+    qtype func_fields;
+    // function type with correct return type
+    qtype new_type;
+    int const ret = guess_func_tinfo(funptr, &func_type, &func_fields);
+
+    ok = (ret != GUESS_FUNC_FAILED);
+    if(ok)
+    {
+      ok = replace_func_return(new_type, return_type, func_type.c_str());
+      if(!ok)
+      {
+        MSG("failed to set the return type for function name='%s'\n", subprogram_holder.get_name());
+      }
+      else
+      {
+        ok = apply_tinfo(idati, funptr->startEA, new_type.c_str(), func_fields.c_str(), 0);
       }
     }
   }
@@ -509,6 +542,26 @@ void visit_func_die(DieHolder &die_holder)
   }
 }
 
+void my_apply_callee_type(ea_t const call_addr)
+{
+#if 0
+  decode_prev_insn(call_addr);
+
+#define NN_mov 122
+  if(cmd.itype == NN_mov)
+  {
+    op_t const &first_op = cmd.Operands[0];
+
+    if(first_op.type == o_displ && first_op.reg == 4)
+    {
+      MSG("at 0x%lx", cmd.ea);
+      msg(", ins: %lu\n", first_op.addr);
+    }
+  }
+#undef NN_mov
+#endif
+}
+
 void add_callee_types(void)
 {
   for(CacheIterator iter(DIE_FUNC); *iter != NULL; ++iter)
@@ -535,6 +588,7 @@ void add_callee_types(void)
             // not when "mov"ing them at [esp+offset]
             apply_callee_type(xref.from, func_type.c_str(), func_fields.c_str());
             DEBUG("applied callee type at 0x%lx\n", xref.from);
+            my_apply_callee_type(xref.from);
           }
         }
       }
