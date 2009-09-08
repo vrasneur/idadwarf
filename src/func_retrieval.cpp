@@ -9,6 +9,7 @@
 #include <xref.hpp>
 #include <lines.hpp>
 #include <ua.hpp>
+#include <segment.hpp>
 
 // local headers
 #include "iterators.hpp"
@@ -546,24 +547,101 @@ void visit_func_die(DieHolder &die_holder)
 
 void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
 {
-#if 0
-  decode_prev_insn(call_addr);
+  qtype func_type;
+  qtype func_fields;
+  qvector<uval_t> stack_offsets;
+  func_type_info_t finfo;
+  int const ret = guess_func_tinfo(funptr, &func_type, &func_fields);
 
-#define NN_mov 122
-  if(cmd.itype == NN_mov)
+  // get the stack offsets of the arguments
+  if(ret != GUESS_FUNC_FAILED)
   {
-    op_t const &first_op = cmd.Operands[0];
+    int const nb_args = build_funcarg_info(idati, func_type.c_str(),
+                                           func_fields.c_str(), &finfo, 0);
 
-    if(first_op.type == o_displ && first_op.reg == 4)
+    if(nb_args >= 1 &&
+       get_cc(finfo.cc) == CM_CC_CDECL)
     {
-      MSG("at 0x%lx", cmd.ea);
-      msg(", ins: %lu\n", first_op.addr);
-      sval_t spd = get_spd(funptr, cmd.ea);
-      MSG("spd: %ld\n", spd);
+      for(int idx = 0; idx < nb_args; ++idx)
+      {
+        // first argloc starts at 0, that's exactly what we need
+        if(is_stack_argloc(finfo[idx].argloc))
+        {
+          stack_offsets.push_back(finfo[idx].argloc);
+        }
+      }
     }
   }
-#undef NN_mov
-#endif
+
+#define NN_mov 122
+#define NN_call 16
+#define R_esp 4
+
+  // at least one arg to comment?
+  if(stack_offsets.size() != 0)
+  {
+    ea_t addr = call_addr;
+    size_t args_found = 0;
+
+    DEBUG("finding args for call address=0x%lx\n", call_addr);
+
+    do
+    {
+      ea_t const prev_addr = decode_prev_insn(addr);
+      
+      if(prev_addr == BADADDR || cmd.itype == NN_call)
+      {
+        break;
+      }
+
+      if(cmd.itype == NN_mov)
+      {
+        op_t const &first_op = cmd.Operands[0];
+        uval_t stack_offset = BADADDR;
+
+        if(first_op.reg == R_esp)
+        {
+          switch(first_op.type)
+          {
+          case o_displ:
+            stack_offset = first_op.addr;
+            break;
+          case o_phrase:
+            stack_offset = 0;
+            break;
+          default:
+            break;
+          }
+        }
+
+        if(stack_offset != BADADDR)
+        {
+          for(size_t idx = 0; idx < stack_offsets.size(); ++idx)
+          {
+            if(stack_offsets[idx] == stack_offset)
+            {
+              DEBUG("found arg count=%ld at address=0x%lx\n",
+                    static_cast<unsigned long>(idx), prev_addr);
+              set_cmt(prev_addr, finfo[idx].name.c_str(), false);
+              args_found++;
+              break;
+            }
+          }
+        }
+      }
+
+      addr = prev_addr;
+    }
+    while(args_found != stack_offsets.size() || addr < funptr->startEA);
+
+    DEBUG("found %ld args (total %ld)\n",
+          static_cast<unsigned long>(args_found),
+          static_cast<unsigned long>(stack_offsets.size()));
+  }
+
+#undef R_esp
+#undef NN_call
+#undef NN_move
 }
 
 void add_callee_types(void)
@@ -589,10 +667,10 @@ void add_callee_types(void)
           if(xref.type == fl_CN || xref.type == fl_CF)
           {
             // appears to only work when "push"ing arguments to the stack
-            // not when "mov"ing them at [esp+offset]
             apply_callee_type(xref.from, func_type.c_str(), func_fields.c_str());
-            DEBUG("applied callee type at 0x%lx\n", xref.from);
+            // do the same thing when "mov"ing them at [esp+offset]
             my_apply_callee_type(funptr, xref.from);
+            DEBUG("applied callee type at 0x%lx\n", xref.from);
           }
         }
       }

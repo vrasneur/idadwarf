@@ -944,7 +944,7 @@ static void second_process_subroutine(DieHolder &subroutine_holder,
   else
   {
     func_type_info_t info;
-    int nb_args = build_funcarg_info(idati, type, fields, &info, 0);
+    int const nb_args = build_funcarg_info(idati, type, fields, &info, 0);
 
     if(nb_args == -1)
     {
