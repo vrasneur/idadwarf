@@ -13,8 +13,6 @@
 
 extern DieCache diecache;
 
-// type DIE processing begins here
-
 // size is in bytes
 static flags_t get_enum_size(Dwarf_Unsigned const size)
 {
@@ -251,7 +249,7 @@ static bool look_ref_type(DieHolder &modifier_holder, die_cache *cache)
     found = add_unspecified_type(cache);
   }
   else
-  // need no find the original type?
+  // need to find the original type?
   {
     Dwarf_Off offset = modifier_holder.get_ref_from_attr(DW_AT_type);
     DieHolder new_die(modifier_holder.get_dbg(), offset);
@@ -295,7 +293,7 @@ static void process_typed_modifier(DieHolder &modifier_holder, die_cache const *
       break;
     case DW_TAG_pointer_type:
       new_type.before(BT_PTR);
-    break;
+      break;
     default:
       MSG("unknown modifier tag %d\n", tag);
       ok = false;
@@ -525,7 +523,6 @@ static void add_structure_member(DieHolder *member_holder, struc_t *sptr,
   {
     // member type not in cache
     // maybe caused by a forward declaration?
-    // TODO: add an unknown member anyway?
     *second_pass = true;
   }
   else
@@ -667,9 +664,17 @@ static void process_complete_structure(DieHolder &structure_holder, char const *
 
     if(*ordinal == BADADDR)
     {
-      MSG("cannot process complete %s offset=0x%" DW_PR_DUx "\n",
-          is_union ? "union" : "structure",
-          structure_holder.get_offset());
+      // IDA does not assign an ordinal to a structure with no member
+      // if there are members, that's an error
+      if(sptr->memqty != 0)
+      {
+        MSG("cannot process complete %s offset=0x%" DW_PR_DUx "\n",
+            is_union ? "union" : "structure",
+            structure_holder.get_offset());
+      }
+      // a successful first pass with recursive members can have a wrong ordinal
+      // correct the BADADDR value
+      *ordinal = 0;
     }
     else if(decl_ordinal != 0)
     {
@@ -683,8 +688,8 @@ static void process_structure(DieHolder &structure_holder)
 {
   char const *name = structure_holder.get_name();
   Dwarf_Attribute declaration = structure_holder.get_attr(DW_AT_declaration);
-  ulong ordinal = 0;
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
+  ulong ordinal = 0;
   bool second_pass = false;
 
   // got an incomplete type?
@@ -702,24 +707,19 @@ static void process_structure(DieHolder &structure_holder)
                                &ordinal, &second_pass);
   }
 
-  if(ordinal != 0)
+  // wait for the second pass to cache a structure/union as useless
+  if(ordinal == 0)
+  {
+    DEBUG("failed to process %s at first pass offset=0x%" DW_PR_DUx "\n",
+          is_union ? "union" : "structure",
+          structure_holder.get_offset());
+  }
+  else
   {
     DEBUG("added %s name='%s' ordinal=%lu\n",
           is_union ? "union" : "structure", name, ordinal);
     structure_holder.cache_type(ordinal, second_pass);
   }
-  else
-  {
-    // do not print an error for a recursive member
-    if(get_struc_id(name) == BADNODE)
-    {
-      MSG("cannot process %s offset=0x%" DW_PR_DUx "\n",
-          is_union ? "union" : "structure",
-          structure_holder.get_offset());
-    }
-
-    structure_holder.cache_useless();
-  }  
 }
 
 static void add_subroutine_parameter(DieHolder *param_holder, qtype &params_type,
@@ -807,11 +807,12 @@ static void add_subroutine_return(DieHolder &subroutine_holder, qtype &func_type
   func_type.append(new_type);
 }
 
-// TODO: handle ellipsis parameter
 static void process_subroutine(DieHolder &subroutine_holder)
 {
   qtype func_type;
   qtype params_type;
+  DieChildIterator ellipsis(subroutine_holder,
+                            DW_TAG_unspecified_parameters);
   int nb_params = 0;
   ulong ordinal = 0;
   bool second_pass = false;
@@ -831,13 +832,13 @@ static void process_subroutine(DieHolder &subroutine_holder)
     nb_params++;
   }
 
-  if(nb_params == 0)
+  if(nb_params == 0 && *ellipsis == NULL)
   {
     func_type[1] |= CM_CC_VOIDARG;
   }
   else
   {
-    func_type[1] |= CM_CC_UNKNOWN;
+    func_type[1] |= (*ellipsis != NULL) ? CM_CC_ELLIPSIS : CM_CC_UNKNOWN;
     append_dt(&func_type, nb_params);
     func_type.append(params_type);
   }
@@ -923,6 +924,7 @@ static void second_process_structure(DieHolder &structure_holder,
   if(third_pass)
   {
     MSG("structure/union name='%s' ordinal=%lu needs a third pass\n", type_name, ordinal);
+    structure_holder.cache_useless();
   }
 }
 
