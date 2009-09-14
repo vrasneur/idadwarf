@@ -392,6 +392,17 @@ static void process_typed_typedef(DieHolder &typedef_holder, ulong const type_or
         }
       }
     }
+#if 0
+    // TODO: this shortcut might cause problems, add an option to enable it
+    // the target type already has the same as its structure?
+    // may happen for tagged types (typedef struct name { ... } name;)
+    else if(name != NULL && strcmp(name, type_name) == 0)
+    {
+      DEBUG("typedef has same name='%s' as its target type", name);
+      ordinal = type_ordinal;
+      ok = true;
+    }
+#endif
     else
     {
       qtype typedef_type;
