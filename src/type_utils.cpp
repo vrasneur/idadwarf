@@ -410,8 +410,8 @@ ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type
     {
       ordinal = get_type_ordinal(idati, name);
 
-      MSG("found equivalent typedef name='%s' type_ordinal=%lu ordinal=%lu\n",
-          name, type_ordinal, ordinal);
+      DEBUG("found equivalent typedef name='%s' type_ordinal=%lu ordinal=%lu\n",
+            name, type_ordinal, ordinal);
     }
 
     qfree(typedef_name), typedef_name = NULL;
