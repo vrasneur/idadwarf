@@ -103,4 +103,6 @@ tid_t add_dup_struc(DieHolder &structure_holder, char const *name,
 
 bool apply_die_type(DieHolder &die_holder, ea_t const addr);
 
+ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type_ordinal);
+
 #endif // IDADWARF_TYPE_UTILS_HPP

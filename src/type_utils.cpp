@@ -327,3 +327,95 @@ bool apply_die_type(DieHolder &die_holder, ea_t const addr)
 
   return ok;
 }
+
+// check if there is a typedef with a given name and equivalent content in the db
+// equivalent content means e.g. structures, unions and enums have the same members
+// return its ordinal if the typedef is found. (0 otherwise)
+ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type_ordinal)
+{
+  ulong ordinal = 0;
+  char const *name = typedef_holder.get_name();
+  type_t const *type = NULL;
+  char *typedef_name = NULL;
+  bool ok = get_numbered_type(idati, type_ordinal, &type);
+
+  if(ok)
+  {
+    type_t const *existing_type = NULL;
+    // already an existing type with the same name?
+    ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &existing_type);
+
+    if(ok)
+    {
+      // existing type is a typedef?
+      if(is_type_typedef(*existing_type))
+      {
+        // typedef to a structure/union?
+        if(is_type_struni(*type))
+        {
+          typedef_name = get_typedef_name(existing_type);
+
+          if(typedef_name != NULL)
+          {
+            tid_t struc_id = get_struc_id(typedef_name);
+
+            ok = (struc_id != BADNODE);
+            if(ok)
+            {
+              Dwarf_Off offset = 0;
+
+              ok = diecache.get_type_offset(type_ordinal, &offset);
+              if(ok)
+              {
+                DieHolder structure_holder(typedef_holder.get_dbg(), offset);
+                StrucCmp struc_cmp(typedef_name);
+
+                ok = struc_cmp.equal(structure_holder);
+              }
+            }
+          }
+        }
+        // typedef to an enum
+        else if(is_type_enum(*type))
+        {
+          typedef_name = get_typedef_name(existing_type);
+
+          if(typedef_name != NULL)
+          {
+            enum_t enum_id = get_enum(typedef_name);
+
+            ok = (enum_id != BADNODE);
+            if(ok)
+            {
+              Dwarf_Off offset = 0;
+
+              ok = diecache.get_type_offset(type_ordinal, &offset);
+              if(ok)
+              {
+                DieHolder enumeration_holder(typedef_holder.get_dbg(), offset);
+                EnumCmp enum_cmp(typedef_name);
+
+                ok = enum_cmp.equal(enumeration_holder);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if(typedef_name != NULL)
+  {
+    if(ok)
+    {
+      ordinal = get_type_ordinal(idati, name);
+
+      MSG("found equivalent typedef name='%s' type_ordinal=%lu ordinal=%lu\n",
+          name, type_ordinal, ordinal);
+    }
+
+    qfree(typedef_name), typedef_name = NULL;
+  }
+
+  return ordinal;    
+}

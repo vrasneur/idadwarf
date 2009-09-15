@@ -248,3 +248,48 @@ bool apply_type_ordinal(ea_t const addr, ulong const ordinal)
 
   return ok;
 }
+
+char *get_typedef_name(type_t const *typedef_type)
+{
+  char *name = NULL;
+  bool ok = false;
+
+  if(is_type_typedef(*typedef_type))
+  {
+    char buf[MAXNAMELEN];
+
+    typedef_type++;
+
+    ok = extract_name(typedef_type, buf);
+
+    if(ok)
+    {
+      if(buf[0] == '#')
+      {
+        type_t const *type = reinterpret_cast<type_t const *>(&buf[1]);
+        ulong ordinal = 0;
+
+        ok = get_de(type, &ordinal);
+        if(ok)
+        {
+          char const *type_name = get_numbered_type_name(idati, ordinal);
+          if(type_name != NULL)
+          {
+            name = qstrdup(type_name);
+          }
+        }
+      }
+      else
+      {
+        name = qstrdup(buf);
+      }
+    }
+  }
+
+  if(!ok)
+  {
+    MSG("failed to get typedef name");
+  }
+
+  return name;
+}

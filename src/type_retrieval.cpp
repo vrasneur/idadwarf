@@ -405,10 +405,20 @@ static void process_typed_typedef(DieHolder &typedef_holder, ulong const type_or
 #endif
     else
     {
-      qtype typedef_type;
+      ordinal = get_equivalent_typedef_ordinal(typedef_holder, type_ordinal);
 
-      make_new_type(typedef_type, NULL, type_ordinal);
-      ok = set_simple_die_type(name, typedef_type, &ordinal);
+      // got the ordinal of the equivalent typedef?
+      if(ordinal != 0)
+      {
+        ok = true;
+      }
+      else
+      {
+        qtype typedef_type;
+
+        make_new_type(typedef_type, NULL, type_ordinal);
+        ok = set_simple_die_type(name, typedef_type, &ordinal);
+      }
     }
 
     if(ok)
@@ -635,7 +645,7 @@ static tid_t decl_add_struc(char const *name, bool const is_union,
     ulong ordinal = 0;
     type_t const *type = NULL;
     bool const ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
-                             NULL, NULL, NULL, NULL, &ordinal);
+                                   NULL, NULL, NULL, NULL, &ordinal);
     if(ok && is_type_void(type[0]))
     {
       *decl_ordinal = ordinal;
@@ -1173,5 +1183,4 @@ void retrieve_types(CUsHolder const &cus_holder)
   do_dies_traversal(cus_holder, try_visit_type_die);
   do_second_pass(dbg);
   update_ptr_types(dbg);
-  // TODO: add a 'remove duplicates' pass
 }

@@ -1,3 +1,4 @@
+
 #ifndef IDADWARF_IDA_UTILS_HPP
 #define IDADWARF_IDA_UTILS_HPP
 
@@ -48,5 +49,7 @@ flags_t fill_typeinfo(typeinfo_t *mt, ulong const ordinal, type_t const **type);
 bool replace_func_return(qtype &new_type, qtype const &return_type, type_t const *func_type);
 
 bool apply_type_ordinal(ea_t const addr, ulong const ordinal);
+
+char *get_typedef_name(type_t const *typedef_type) GCC_MALLOC;
 
 #endif // IDADWARF_IDA_UTILS_HPP
