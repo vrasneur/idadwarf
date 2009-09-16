@@ -148,7 +148,13 @@ void idaapi run(GCC_UNUSED int arg)
 
       retrieve_cus(cus_holder);
       retrieve_types(cus_holder);
-      retrieve_funcs(cus_holder);
+
+      // functions and variables retrievals use the x86 DWARF ABI
+      // for register related stuff
+      if(strcmp(inf.procName, "metapc") == 0)
+      {
+        retrieve_funcs(cus_holder);
+      }
       retrieve_globals(cus_holder);
 #if 0
       retrieve_macros(dbg);
