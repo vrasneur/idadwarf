@@ -50,7 +50,7 @@ endif
 LIBS := -Wl,--dll -shared -mno-cygwin
 MACHINE := $(strip $(shell $(CC) -dumpmachine))
 BIN := idadwarf.plw
-STEMS := ida_utils die_cache die_utils iterators type_utils type_retrieval func_retrieval global_retrieval macro_retrieval idadwarf
+STEMS := ida_utils registers die_cache die_utils iterators type_utils type_retrieval func_retrieval global_retrieval macro_retrieval idadwarf
 OBJS := $(addsuffix .o,$(STEMS))
 
 $(shell mkdir -p $(ABSDEPSDIR))

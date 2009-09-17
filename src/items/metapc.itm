@@ -1,0 +1,11 @@
+// ITEM(IDA reg number, DWARF reg operand, reg name)
+
+ITEM(0, DW_OP_reg0, eax)
+ITEM(1, DW_OP_reg1, ecx)
+ITEM(2, DW_OP_reg2, edx)
+ITEM(3, DW_OP_reg3, ebx)
+ITEM(4, DW_OP_reg4, esp)
+ITEM(5, DW_OP_reg5, ebp)
+ITEM(6, DW_OP_reg6, esi)
+ITEM(7, DW_OP_reg7, edi)
+ITEM(28, DW_OP_reg8, eip)

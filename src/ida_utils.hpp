@@ -52,4 +52,8 @@ bool apply_type_ordinal(ea_t const addr, ulong const ordinal);
 
 char *get_typedef_name(type_t const *typedef_type) GCC_MALLOC;
 
+ulong get_typedef_ordinal(type_t const *typedef_type);
+
+char const *resolve_typedef_name(type_t const *typedef_type);
+
 #endif // IDADWARF_IDA_UTILS_HPP

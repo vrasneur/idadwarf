@@ -46,7 +46,7 @@ class DieCache
 {
 public:
   DieCache(void) throw()
-    : m_dies_node("$ " PLUGIN_NAME, 0, true)
+    : m_dies_node("$ " PLUGIN_NAME " dies", 0, true)
   {
 
   }

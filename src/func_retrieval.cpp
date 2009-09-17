@@ -15,6 +15,9 @@
 #include "iterators.hpp"
 #include "ida_utils.hpp"
 #include "type_utils.hpp"
+#include "registers.hpp"
+
+RegNames regnames;
 
 extern DieCache diecache;
 
@@ -49,60 +52,126 @@ static var_type get_var_type(Dwarf_Small const atom)
   return type;
 }
 
+static void set_register_var_operand_type(DieHolder &var_holder, char const *reg_name,
+                                          ea_t const startEA, ea_t const endEA)
+{
+  Dwarf_Off const offset = var_holder.get_ref_from_attr(DW_AT_type);
+  ulong ordinal = 0;
+  bool ok = diecache.get_cache_type_ordinal(offset, &ordinal);
+  tid_t struc_id = BADNODE;
+  struc_t *sptr = NULL;
+
+  if(ok)
+  {
+    type_t const *type = NULL;
+    ok = get_numbered_type(idati, ordinal, &type);
+
+    // we only handle pointers to structures/unions
+    if(ok && is_type_ptr(*type))
+    {
+      ok = remove_type_pointer(idati, &type, NULL);
+      if(ok && is_type_typedef(*type))
+      {
+        char const *name = resolve_typedef_name(type);
+
+        if(name != NULL)
+        {
+          struc_id = get_struc_id(name);
+
+          if(struc_id != BADNODE)
+          {
+            sptr = get_struc(struc_id);
+          }
+        }
+      }
+    }
+  }
+
+  if(struc_id != BADNODE && sptr != NULL)
+  {
+    ea_t current_addr = startEA;
+
+    while(current_addr < endEA)
+    {
+      ua_ana0(current_addr);
+      if(cmd.size == 0)
+      {
+        break;
+      }
+
+      for(int nb_op = 0; nb_op < UA_MAXOP; ++nb_op)
+      {
+        op_t const &op = cmd.Operands[nb_op];
+        // no more operands for this instruction?
+        if(op.type == o_void)
+        {
+          break;
+        }
+
+        uval_t reg_offset = BADADDR;
+        switch(op.type)
+        {
+        case o_displ:
+          reg_offset = op.addr;
+          break;
+        case o_phrase:
+          reg_offset = 0;
+          break;
+        default:
+          break;
+        }
+
+        if(reg_offset != BADADDR)
+        {
+          member_t *mptr = NULL;
+          // same register?
+          char const *name = regnames.get_name(static_cast<metapc_reg>(op.reg));
+          if(name == NULL || strcmp(name, reg_name) != 0)
+          {
+            continue;
+          }
+
+          mptr = get_best_fit_member(sptr, reg_offset);
+          if(mptr != NULL)
+          {
+            tid_t path[2] = { struc_id, mptr->id };
+
+            op_stroff(current_addr, nb_op, path, 2, 0);
+            DEBUG("applied member var_name='%s' reg_name='%s' at 0x%lx\n",
+                  var_holder.get_name(), reg_name, current_addr);
+          }
+        }
+      }
+
+      current_addr += cmd.size;
+    }
+  }
+}
+
 static bool process_register_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
                                  func_t *funptr, ea_t const cu_low_pc)
 {
   char const *var_name = var_holder.get_name();
-  char const *reg_name = NULL;
   Dwarf_Loc const *loc = &locdesc->ld_s[0];
+  char const *reg_name = regnames.get_name_from_atom(loc->lr_atom);
   bool ok = false;
-
-  switch(loc->lr_atom)
-  {
-  case DW_OP_reg0:
-    reg_name = "eax";
-    break;
-  case DW_OP_reg1:
-    reg_name = "ecx";
-    break;
-  case DW_OP_reg2:
-    reg_name = "edx";
-    break;
-  case DW_OP_reg3:
-    reg_name = "ebx";
-    break;
-  case DW_OP_reg4:
-    reg_name = "esp";
-    break;
-  case DW_OP_reg5:
-    reg_name = "ebp";
-    break;
-  case DW_OP_reg6:
-    reg_name = "esi";
-    break;
-  case DW_OP_reg7:
-    reg_name = "edi";
-    break;
-  case DW_OP_reg8:
-    reg_name = "eip";
-    break;
-  default:
-    MSG("unknown register atom=%u\n", loc->lr_atom);
-    break;
-  }
 
   if(reg_name != NULL)
   {
     if(locdesc->ld_from_loclist)
     {
       char *comment = var_holder.get_type_comment();
-      int const ret = add_regvar(funptr, locdesc->ld_lopc + cu_low_pc, locdesc->ld_hipc + cu_low_pc,
+      ea_t const startEA = locdesc->ld_lopc + cu_low_pc;
+      ea_t const endEA = locdesc->ld_hipc + cu_low_pc;
+      int const ret = add_regvar(funptr, startEA, endEA,
                                  reg_name, var_name, comment);
 
       if(comment != NULL)
       {
         qfree(comment), comment = NULL;
       }
+
+      set_register_var_operand_type(var_holder, reg_name, startEA, endEA);
 
       ok = (ret == REGVAR_ERROR_OK);
       DEBUG("applied register name='%s'for variable name='%s'\n", reg_name, var_name);
@@ -112,7 +181,7 @@ static bool process_register_var(DieHolder &var_holder, Dwarf_Locdesc const *loc
   return ok;
 }
 
-void set_stack_var_complex_type(struc_t *fptr, char const *var_name)
+static void set_stack_var_complex_type(struc_t *fptr, char const *var_name)
 {
   member_t *mptr = get_member_by_name(fptr, var_name);
 
@@ -131,7 +200,7 @@ void set_stack_var_complex_type(struc_t *fptr, char const *var_name)
   }
 }
 
-void set_stack_var_type_cmt(struc_t *fptr, char const *var_name)
+static void set_stack_var_type_cmt(struc_t *fptr, char const *var_name)
 {
   member_t *mptr = get_member_by_name(fptr, var_name);
 
@@ -507,7 +576,7 @@ static void process_subprogram(DieHolder &subprogram_holder)
   }
 }
 
-void process_label(DieHolder &label_holder)
+static void process_label(DieHolder &label_holder)
 {
   label_holder.enable_abstract_origin();
 
@@ -545,7 +614,7 @@ void visit_func_die(DieHolder &die_holder)
   }
 }
 
-void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
+static void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
 {
   qtype func_type;
   qtype func_fields;
@@ -573,9 +642,10 @@ void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
     }
   }
 
+// only define the necessary instructions
+// allins.hpp is too big...
 #define NN_mov 122
 #define NN_call 16
-#define R_esp 4
 
   // at least one arg to comment?
   if(stack_offsets.size() != 0)
@@ -599,22 +669,19 @@ void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
         op_t const &first_op = cmd.Operands[0];
         uval_t stack_offset = BADADDR;
 
-        if(first_op.reg == R_esp)
+        switch(first_op.type)
         {
-          switch(first_op.type)
-          {
-          case o_displ:
-            stack_offset = first_op.addr;
-            break;
-          case o_phrase:
-            stack_offset = 0;
-            break;
-          default:
-            break;
-          }
+        case o_displ:
+          stack_offset = first_op.addr;
+          break;
+        case o_phrase:
+          stack_offset = 0;
+          break;
+        default:
+          break;
         }
 
-        if(stack_offset != BADADDR)
+        if(stack_offset != BADADDR && first_op.reg == R_esp)
         {
           for(size_t idx = 0; idx < stack_offsets.size(); ++idx)
           {
@@ -639,12 +706,11 @@ void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
           static_cast<unsigned long>(stack_offsets.size()));
   }
 
-#undef R_esp
 #undef NN_call
 #undef NN_move
 }
 
-void add_callee_types(void)
+static void add_callee_types(void)
 {
   for(CacheIterator iter(DIE_FUNC); *iter != NULL; ++iter)
   {
