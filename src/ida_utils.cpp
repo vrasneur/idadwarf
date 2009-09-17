@@ -249,53 +249,6 @@ bool apply_type_ordinal(ea_t const addr, ulong const ordinal)
   return ok;
 }
 
-// get the name of the type inside a typedef
-// warning: returned string is allocated on the heap
-char *get_typedef_name(type_t const *typedef_type)
-{
-  char *name = NULL;
-  bool ok = false;
-
-  if(is_type_typedef(*typedef_type))
-  {
-    char buf[MAXNAMELEN];
-
-    typedef_type++;
-
-    ok = extract_name(typedef_type, buf);
-
-    if(ok)
-    {
-      if(buf[0] == '#')
-      {
-        type_t const *type = reinterpret_cast<type_t const *>(&buf[1]);
-        ulong ordinal = 0;
-
-        ok = get_de(type, &ordinal);
-        if(ok)
-        {
-          char const *type_name = get_numbered_type_name(idati, ordinal);
-          if(type_name != NULL)
-          {
-            name = qstrdup(type_name);
-          }
-        }
-      }
-      else
-      {
-        name = qstrdup(buf);
-      }
-    }
-  }
-
-  if(!ok)
-  {
-    MSG("failed to get typedef name\n");
-  }
-
-  return name;
-}
-
 // get the ordinal of the type inside a typedef
 ulong get_typedef_ordinal(type_t const *typedef_type)
 {
@@ -333,11 +286,22 @@ ulong get_typedef_ordinal(type_t const *typedef_type)
   return ordinal;
 }
 
-// same as get_type_name, but recursively get the name
-// warning: returned string is IDA's internal one, no need to free it
-char const *resolve_typedef_name(type_t const *typedef_type)
+char const *get_typedef_name(type_t const *typedef_type)
 {
+  ulong ordinal = get_typedef_ordinal(typedef_type);
   char const *name = NULL;
+
+  if(ordinal != 0)
+  {
+    name = get_numbered_type_name(idati, ordinal);
+  }
+
+  return name;  
+}
+
+// same as get_typedef_ordinal, but recursively get the ordinal
+ulong resolve_typedef_ordinal(type_t const *typedef_type)
+{
   ulong ordinal = get_typedef_ordinal(typedef_type);
 
   while(ordinal != 0)
@@ -358,6 +322,14 @@ char const *resolve_typedef_name(type_t const *typedef_type)
 
     ordinal = type_ordinal;
   }
+
+  return ordinal;
+}
+
+char const *resolve_typedef_name(type_t const *typedef_type)
+{
+  ulong ordinal = resolve_typedef_ordinal(typedef_type);
+  char const *name = NULL;
 
   if(ordinal != 0)
   {

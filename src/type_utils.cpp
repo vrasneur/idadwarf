@@ -334,16 +334,16 @@ bool apply_die_type(DieHolder &die_holder, ea_t const addr)
 ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type_ordinal)
 {
   ulong ordinal = 0;
-  char const *name = typedef_holder.get_name();
+  char const *typedef_name = typedef_holder.get_name();
   type_t const *type = NULL;
-  char *typedef_name = NULL;
+  char const *name = NULL;
   bool ok = get_numbered_type(idati, type_ordinal, &type);
 
   if(ok)
   {
     type_t const *existing_type = NULL;
     // already an existing type with the same name?
-    ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &existing_type);
+    ok = get_named_type(idati, typedef_name, NTF_TYPE | NTF_NOBASE, &existing_type);
 
     if(ok)
     {
@@ -353,11 +353,11 @@ ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type
         // typedef to a structure/union?
         if(is_type_struni(*type))
         {
-          typedef_name = get_typedef_name(existing_type);
+          name = get_typedef_name(existing_type);
 
-          if(typedef_name != NULL)
+          if(name != NULL)
           {
-            tid_t struc_id = get_struc_id(typedef_name);
+            tid_t struc_id = get_struc_id(name);
 
             ok = (struc_id != BADNODE);
             if(ok)
@@ -368,7 +368,7 @@ ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type
               if(ok)
               {
                 DieHolder structure_holder(typedef_holder.get_dbg(), offset);
-                StrucCmp struc_cmp(typedef_name);
+                StrucCmp struc_cmp(name);
 
                 ok = struc_cmp.equal(structure_holder);
               }
@@ -378,11 +378,11 @@ ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type
         // typedef to an enum
         else if(is_type_enum(*type))
         {
-          typedef_name = get_typedef_name(existing_type);
+          name = get_typedef_name(existing_type);
 
-          if(typedef_name != NULL)
+          if(name != NULL)
           {
-            enum_t enum_id = get_enum(typedef_name);
+            enum_t enum_id = get_enum(name);
 
             ok = (enum_id != BADNODE);
             if(ok)
@@ -393,7 +393,7 @@ ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type
               if(ok)
               {
                 DieHolder enumeration_holder(typedef_holder.get_dbg(), offset);
-                EnumCmp enum_cmp(typedef_name);
+                EnumCmp enum_cmp(name);
 
                 ok = enum_cmp.equal(enumeration_holder);
               }
@@ -404,17 +404,15 @@ ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type
     }
   }
 
-  if(typedef_name != NULL)
+  if(name != NULL)
   {
     if(ok)
     {
-      ordinal = get_type_ordinal(idati, name);
+      ordinal = get_type_ordinal(idati, typedef_name);
 
-      DEBUG("found equivalent typedef name='%s' type_ordinal=%lu ordinal=%lu\n",
-            name, type_ordinal, ordinal);
+      DEBUG("found equivalent typedef typedef_name='%s' name='%s' type_ordinal=%lu ordinal=%lu\n",
+            typedef_name, name, type_ordinal, ordinal);
     }
-
-    qfree(typedef_name), typedef_name = NULL;
   }
 
   return ordinal;    
