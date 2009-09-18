@@ -326,6 +326,20 @@ ulong resolve_typedef_ordinal(type_t const *typedef_type)
   return ordinal;
 }
 
+ulong const resolve_typedef_ordinal(ulong const typedef_ordinal)
+{
+  ulong ordinal = 0;
+  type_t const *typedef_type = NULL;
+  bool const ok = get_numbered_type(idati, typedef_ordinal, &typedef_type);
+
+  if(ok)
+  {
+    ordinal = resolve_typedef_ordinal(typedef_type);
+  }
+
+  return ordinal;
+}
+
 char const *resolve_typedef_name(type_t const *typedef_type)
 {
   ulong ordinal = resolve_typedef_ordinal(typedef_type);

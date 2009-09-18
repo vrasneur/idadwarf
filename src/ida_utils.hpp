@@ -56,6 +56,8 @@ char const *get_typedef_name(type_t const *typedef_type);
 
 ulong resolve_typedef_ordinal(type_t const*typedef_type);
 
+ulong const resolve_typedef_ordinal(ulong const typedef_ordinal);
+
 char const *resolve_typedef_name(type_t const *typedef_type);
 
 #endif // IDADWARF_IDA_UTILS_HPP

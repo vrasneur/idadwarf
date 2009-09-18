@@ -52,42 +52,162 @@ static var_type get_var_type(Dwarf_Small const atom)
   return type;
 }
 
+// transform operand [var+offset] into [var+struct.member] if var is a pointer to a struct/union
+static void set_register_var_strpath(ea_t const current_addr, char const *reg_name,
+                                     struc_t *sptr)
+{
+  for(int nb_op = 0; nb_op < UA_MAXOP; ++nb_op)
+  {
+    op_t const &op = cmd.Operands[nb_op];
+    // no more operands for this instruction?
+    if(op.type == o_void)
+    {
+      break;
+    }
+
+    uval_t reg_offset = BADADDR;
+    switch(op.type)
+    {
+    case o_displ:
+      reg_offset = op.addr;
+      break;
+    case o_phrase:
+      reg_offset = 0;
+      break;
+    default:
+      break;
+    }
+
+    if(reg_offset != BADADDR)
+    {
+      member_t *mptr = NULL;
+      // same register?
+      char const *name = regnames.get_name(static_cast<metapc_reg>(op.reg));
+      if(name == NULL || strcmp(name, reg_name) != 0)
+      {
+        continue;
+      }
+
+      mptr = get_best_fit_member(sptr, reg_offset);
+      if(mptr != NULL)
+      {
+        tid_t path[2] = { sptr->id, mptr->id };
+
+        op_stroff(current_addr, nb_op, path, 2, 0);
+        DEBUG("applied struct member reg_name='%s' at 0x%lx\n",
+              reg_name, current_addr);
+      }
+    }
+  }
+}
+
+// apply enum value to an operand
+static void set_register_var_enum(ea_t const current_addr, char const *reg_name,
+                                  enum_t enum_id)
+{
+#define NN_cmp 27
+#define NN_mov 122
+#define NN_test 210
+
+  if(cmd.itype == NN_cmp || cmd.itype == NN_mov || cmd.itype == NN_test)
+  {
+    bool found = false;
+
+    for(int nb_op = 0; nb_op < UA_MAXOP; ++nb_op)
+    {
+      op_t const &op = cmd.Operands[nb_op];
+      // no more operands for this instruction?
+      if(op.type == o_void)
+      {
+        break;
+      }
+
+      if(op.type == o_reg)
+      {
+        // same register?
+        char const *name = regnames.get_name(static_cast<metapc_reg>(op.reg));
+        if(name != NULL && strcmp(name, reg_name) == 0)
+        {
+          found = true;
+          break;
+        }
+      }
+    }
+
+    if(found)
+    {
+      for(int nb_op = 0; nb_op < UA_MAXOP; ++nb_op)
+      {
+        op_t const &op = cmd.Operands[nb_op];
+        // no more operands for this instruction?
+        if(op.type == o_void)
+        {
+          break;
+        }
+
+        if(op.type == o_imm)
+        {
+          op_enum(current_addr, nb_op, enum_id, 0);
+          DEBUG("applied enum reg_name='%s' at 0x%lx\n",
+                reg_name, current_addr);
+
+        }
+      }
+    }
+  }
+
+#undef NN_test
+#undef NN_mov
+#undef NN_cmp
+}
+
 static void set_register_var_operand_type(DieHolder &var_holder, char const *reg_name,
                                           ea_t const startEA, ea_t const endEA)
 {
   Dwarf_Off const offset = var_holder.get_ref_from_attr(DW_AT_type);
   ulong ordinal = 0;
   bool ok = diecache.get_cache_type_ordinal(offset, &ordinal);
-  tid_t struc_id = BADNODE;
   struc_t *sptr = NULL;
+  enum_t enum_id = BADNODE;
 
   if(ok)
   {
     type_t const *type = NULL;
+
+    ordinal = resolve_typedef_ordinal(ordinal) ?: ordinal;
     ok = get_numbered_type(idati, ordinal, &type);
-
-    // we only handle pointers to structures/unions
-    if(ok && is_type_ptr(*type))
+    if(ok)
     {
-      ok = remove_type_pointer(idati, &type, NULL);
-      if(ok && is_type_typedef(*type))
+      // handle enums
+      if(is_type_enum(*type))
       {
-        char const *name = resolve_typedef_name(type);
+        char const *name = get_numbered_type_name(idati, ordinal);
 
-        if(name != NULL)
+        enum_id = get_enum(name);
+      }
+      // handle pointers to structures/unions
+      else if(is_type_ptr(*type))
+      {
+        ok = remove_type_pointer(idati, &type, NULL);
+        if(ok && is_type_typedef(*type))
         {
-          struc_id = get_struc_id(name);
+          char const *name = resolve_typedef_name(type);
 
-          if(struc_id != BADNODE)
+          if(name != NULL)
           {
-            sptr = get_struc(struc_id);
+            tid_t const struc_id = get_struc_id(name);
+
+            if(struc_id != BADNODE)
+            {
+              sptr = get_struc(struc_id);
+            }
           }
         }
       }
     }
   }
 
-  if(struc_id != BADNODE && sptr != NULL)
+  if(sptr != NULL || enum_id != BADNODE)
   {
     ea_t current_addr = startEA;
 
@@ -99,48 +219,13 @@ static void set_register_var_operand_type(DieHolder &var_holder, char const *reg
         break;
       }
 
-      for(int nb_op = 0; nb_op < UA_MAXOP; ++nb_op)
+      if(sptr != NULL)
       {
-        op_t const &op = cmd.Operands[nb_op];
-        // no more operands for this instruction?
-        if(op.type == o_void)
-        {
-          break;
-        }
-
-        uval_t reg_offset = BADADDR;
-        switch(op.type)
-        {
-        case o_displ:
-          reg_offset = op.addr;
-          break;
-        case o_phrase:
-          reg_offset = 0;
-          break;
-        default:
-          break;
-        }
-
-        if(reg_offset != BADADDR)
-        {
-          member_t *mptr = NULL;
-          // same register?
-          char const *name = regnames.get_name(static_cast<metapc_reg>(op.reg));
-          if(name == NULL || strcmp(name, reg_name) != 0)
-          {
-            continue;
-          }
-
-          mptr = get_best_fit_member(sptr, reg_offset);
-          if(mptr != NULL)
-          {
-            tid_t path[2] = { struc_id, mptr->id };
-
-            op_stroff(current_addr, nb_op, path, 2, 0);
-            DEBUG("applied member var_name='%s' reg_name='%s' at 0x%lx\n",
-                  var_holder.get_name(), reg_name, current_addr);
-          }
-        }
+        set_register_var_strpath(current_addr, reg_name, sptr);
+      }
+      else if(enum_id != BADNODE)
+      {
+        set_register_var_enum(current_addr, reg_name, enum_id);
       }
 
       current_addr += cmd.size;
@@ -644,8 +729,8 @@ static void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
 
 // only define the necessary instructions
 // allins.hpp is too big...
-#define NN_mov 122
 #define NN_call 16
+#define NN_mov 122
 
   // at least one arg to comment?
   if(stack_offsets.size() != 0)
@@ -706,8 +791,8 @@ static void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
           static_cast<unsigned long>(stack_offsets.size()));
   }
 
+#undef NN_mov
 #undef NN_call
-#undef NN_move
 }
 
 static void add_callee_types(void)
