@@ -1,0 +1,17 @@
+How to compile IDADWARF?
+------------------------
+
+IDADWARF is an IDA plugin for Windows, but you must compile it on a Linux system.
+
+Why? Because I developed the plugin on a Linux-based netbook.
+
+That means:
+* MinGW acts as a cross-compiler
+* IDA (and IDADWARF) runs via Wine.
+
+IDADWARF has some dependencies:
+* libelf: the GNU one, but another one with the same System V Release 4 API will do...
+  http://www.mr511.de/software/
+* libdwarf: the open-sourced library from SGI.
+  http://reality.sgiweb.org/davea/dwarf.html
+* the IDA SDK
