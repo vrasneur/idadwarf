@@ -3,6 +3,8 @@ IDADWARF README
 IDADWARF is an IDA plugin that imports DWARF debugging symbols
 into an IDA database.
 
+It is written in C++ and is licensed under the GPLv3.
+
 What information can be retrieved from the debugging symbols?
 -------------------------------------------------------------
 

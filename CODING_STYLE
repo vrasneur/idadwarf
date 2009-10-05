@@ -1,11 +1,12 @@
 Coding style used for IDADWARF:
 
-* An indentation is 2 spaces.
+* 2 spaces for an indent.
 * Automatic variables are always initialized.
 * I tried to apply const-correctness as much as possible.
   The const qualifier is placed at the right of the type (that is: int const my_var = 0;)
+* Primitive types are passed by address. Objects are passed by reference.
 * There is only one "return" statement per function: there are no "early" returns.
-  That means a function can only "exit" at the end of its definition.
+  That means a function can "exit" only at the end of its definition.
 * Exceptions are used. The code uses RAII and auto pointers to be exception-safe.
   RAII wrappers have been created for libdwarf objects (compilation units, DIEs, ...)
   A call to the wrapped libdwarf may throw an exception. They are catched in the DIE visitor,
