@@ -3,6 +3,7 @@ Coding style used for IDADWARF:
 * An indentation is 2 spaces.
 * Automatic variables are always initialized.
 * I tried to apply const-correctness as much as possible.
+  The const qualifier is placed at the right of the type (that is: int const my_var = 0;)
 * There is only one "return" statement per function: there are no "early" returns.
   That means a function can only "exit" at the end of its definition.
 * Exceptions are used. The code uses RAII and auto pointers to be exception-safe.
