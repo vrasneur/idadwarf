@@ -12,6 +12,8 @@ Just copy the 'idadwarf.plw' file to the IDA plugins directory.
 When loading an ELF file, there should be a new "ELF/DWARF plugin" entry
 in the "Edit/plugins" menu.
 
+Warning: only use this plugin on an already analyzed database.
+
 What information can be retrieved from the debugging symbols?
 -------------------------------------------------------------
 
