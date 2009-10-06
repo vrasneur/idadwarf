@@ -34,6 +34,10 @@ To compile the plugin, follow these steps:
   make
   (the 'make' command will build libelf and libdwarf too,
    the resulting plugin is named idadwarf.plw.)
+* or if you want a debug build, type:
+  DEBUG=1 make
+  (the only change in a debug build is that lots of debug
+   messages are printed to the IDA messages window.)
 * copy the plugin to the IDA plugin directory:
   make install
 * or copy the plugin in the bin/ directory:
