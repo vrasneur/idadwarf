@@ -12,8 +12,33 @@ That means:
 Don't be afraid, the plugin should also run natively on Windows.
 
 IDADWARF has some dependencies:
+* MinGW: installed as a cross-compiler on a Linux host.
+  http://www.mingw.org
 * libelf: the GNU one, but another one with the same System V Release 4 API will do...
   http://www.mr511.de/software/
 * libdwarf: the open-sourced library from SGI.
   http://reality.sgiweb.org/davea/dwarf.html
 * the IDA SDK
+
+To compile the plugin, follow these steps:
+* edit the src/Makefile file
+  the following variables need to be adapted to your configuration:
+  + ELFDIR (the libelf source path)
+  + DWARFDIR (the libdwarf source path)
+  + IDAINC (include directory in the IDA SDK)
+  + IDALIB (the IDA static library for GCC)
+  + IDADIR (directory where the idag.exe binary is)
+* add the mingw compiler to your $PATH:
+  export PATH=/home/vincent/mingw32/bin/:$PATH
+* build the plugin, in the src/ directory:
+  make
+  (the 'make' command will build libelf and libdwarf too,
+   the resulting plugin is named idadwarf.plw.)
+* copy the plugin to the IDA plugin directory:
+  make install
+* or copy the plugin in the bin/ directory:
+  make dist
+* test if all is working correctly:
+  make test
+* clean all you have done
+  make distclean

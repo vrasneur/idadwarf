@@ -38,6 +38,7 @@ Some limitations of the plugin:
 * C debugging symbols will give the best results.
   There is nearly no C++ support for now: no namespaces, objects, templates, references...
   No Pascal or FORTRAN or [your language here] either.
+* only ELF files are supported.
 * types retrieval works for all the architectures, other retrievals (functions, variables, ...)
   can only be performed when working on an IA32 (metapc) program.
 * no stack frame information retrieval for FPO-based functions
