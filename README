@@ -5,6 +5,13 @@ into an IDA database.
 
 It is written in C++ and is licensed under the GPLv3.
 
+How to use it?
+--------------
+
+Just copy the 'idadwarf.plw' file to the IDA plugins directory.
+When loading an ELF file, there should be a new "ELF/DWARF plugin" entry
+in the "Edit/plugins" menu.
+
 What information can be retrieved from the debugging symbols?
 -------------------------------------------------------------
 
