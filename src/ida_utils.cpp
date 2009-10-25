@@ -326,7 +326,7 @@ ulong resolve_typedef_ordinal(type_t const *typedef_type)
   return ordinal;
 }
 
-ulong const resolve_typedef_ordinal(ulong const typedef_ordinal)
+ulong resolve_typedef_ordinal(ulong const typedef_ordinal)
 {
   ulong ordinal = 0;
   type_t const *typedef_type = NULL;
