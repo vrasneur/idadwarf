@@ -46,7 +46,7 @@ using namespace std;
 DieCache diecache;
 
 // retrieve compilation units
-void retrieve_cus(CUsHolder &cus_holder)
+static void retrieve_cus(CUsHolder &cus_holder)
 {
   Dwarf_Debug dbg = cus_holder.get_dbg();
   Dwarf_Unsigned cu_header_length = 0;
@@ -190,7 +190,7 @@ void idaapi run(GCC_UNUSED int arg)
     // we cannot do much with this file...
     if(cus_holder.size() == 0)
     {
-      MSG("no compilation units found in ELF file '%s'\n", elf_path);
+      MSG("no compilation unit DIEs found in ELF file '%s'\n", elf_path);
       // ask for the real debug symbols file.
       load_separate_dwarf_file(cus_holder);
     }
