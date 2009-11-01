@@ -134,7 +134,7 @@ static int open_dwarf_file(char const *elf_path, Dwarf_Debug *dbg)
 
 static void load_separate_dwarf_file(CUsHolder &cus_holder)
 {
-  char const *res = askfile_c(0, NULL, "Select file with DWARF debug infos\n");
+  char const *res = askfile_c(0, NULL, "Select ELF file with DWARF debug infos\n");
 
   if(res != NULL)
   {

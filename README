@@ -3,7 +3,9 @@ IDADWARF README
 IDADWARF is an IDA plugin that imports DWARF debugging symbols
 into an IDA database.
 
-It is written in C++ and is licensed under the GPLv3.
+The plugin is written in C++ with some GNU extensions.
+
+IDADWARF is (c) 2009 Vincent Rasneur and is licensed under the GPLv3.
 
 How to use it?
 --------------
@@ -13,6 +15,11 @@ When loading an ELF file, there should be a new "ELF/DWARF plugin" entry
 in the "Edit/plugins" menu.
 
 Warning: only use this plugin on an already analyzed database.
+
+How to build it?
+----------------
+
+See the INSTALL file.
 
 What information can be retrieved from the debugging symbols?
 -------------------------------------------------------------
