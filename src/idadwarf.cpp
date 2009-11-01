@@ -93,6 +93,62 @@ void retrieve_cus(CUsHolder &cus_holder)
   }
 }
 
+static int open_dwarf_file(char const *elf_path, Dwarf_Debug *dbg)
+{
+  int fd = -1;
+
+  if(elf_path != NULL && dbg != NULL)
+  {
+    fd = open(elf_path, O_RDONLY | O_BINARY, 0);
+
+    if(fd < 0)
+    {
+      WARNING("cannot open elf file '%s'\n", elf_path);
+    }
+    else
+    {
+      Dwarf_Error err = NULL;
+      // init libdwarf
+      int ret = dwarf_init(fd, DW_DLC_READ, NULL, NULL, dbg, &err);
+
+      if(ret != DW_DLV_OK)
+      {
+        MSG("Cannot init libdwarf for ELF file '%s'\n", elf_path);
+
+        if(ret == DW_DLV_NO_ENTRY)
+        {
+          MSG("no DWARF infos\n");
+        }
+        else if(ret != DW_DLV_OK)
+        {
+          MSG("error during libdwarf init: %s\n", dwarf_errmsg(err));
+        }
+
+        close(fd), fd = -1;
+      }
+    }
+  }
+
+  return fd;
+}
+
+static void load_separate_dwarf_file(CUsHolder &cus_holder)
+{
+  char const *res = askfile_c(0, NULL, "Select file with DWARF debug infos\n");
+
+  if(res != NULL)
+  {
+    Dwarf_Debug dbg = NULL;
+    int fd = open_dwarf_file(res, &dbg);
+
+    if(fd >= 0)
+    {
+      cus_holder.reset(dbg, fd);
+      retrieve_cus(cus_holder);
+    }
+  }
+}
+
 // plugin callbacks
 
 int idaapi init(void)
@@ -116,55 +172,42 @@ int idaapi init(void)
 
 void idaapi run(GCC_UNUSED int arg)
 {
+  Dwarf_Debug dbg = NULL;
+  char elf_path[QMAXPATH];
   int fd = -1;
-  static char elf_path[QMAXPATH];
 
-  (void)get_input_file_path(elf_path, sizeof(elf_path));
-
-  fd = open(elf_path, O_RDONLY | O_BINARY, 0);
-  if(fd < 0)
-  {
-    WARNING("cannot open elf file '%s'\n", elf_path);
-  }
-  else
-  {
-    Dwarf_Debug dbg = NULL;
-    Dwarf_Error err = NULL;
-    // init libdwarf
-    int ret = dwarf_init(fd, DW_DLC_READ, NULL, NULL, &dbg, &err);
-
-    if(ret == DW_DLV_NO_ENTRY)
-    {
-      MSG("no DWARF infos in ELF file '%s'\n", elf_path);
-    }
-    else if(ret != DW_DLV_OK)
-    {
-      MSG("error during libdwarf init: %s\n", dwarf_errmsg(err));
-    }
-    else
-    {
-      // dbg will be freed by the CUs holder
-      CUsHolder cus_holder(dbg);
-
-      retrieve_cus(cus_holder);
-      retrieve_types(cus_holder);
-
-      // functions and variables retrievals use the x86 DWARF ABI
-      // for register related stuff
-      if(strcmp(inf.procName, "metapc") == 0)
-      {
-        retrieve_funcs(cus_holder);
-      }
-      retrieve_globals(cus_holder);
-#if 0
-      retrieve_macros(dbg);
-#endif
-    }
-  }
+  get_input_file_path(elf_path, sizeof(elf_path));
+  fd = open_dwarf_file(elf_path, &dbg);
 
   if(fd >= 0)
   {
-    (void)close(fd);
+    // constructor arguments will be freed by the CUs holder
+    CUsHolder cus_holder(dbg, fd);
+
+    retrieve_cus(cus_holder);
+
+    // if there are no compilation units,
+    // we cannot do much with this file...
+    if(cus_holder.size() == 0)
+    {
+      MSG("no compilation units found in ELF file '%s'\n", elf_path);
+      // ask for the real debug symbols file.
+      load_separate_dwarf_file(cus_holder);
+    }
+
+    retrieve_types(cus_holder);
+
+    // functions and variables retrievals use the x86 DWARF ABI
+    // for register related stuff
+    if(strcmp(inf.procName, "metapc") == 0)
+    {
+      retrieve_funcs(cus_holder);
+    }
+
+    retrieve_globals(cus_holder);
+#if 0
+    retrieve_macros(dbg);
+#endif
   }
 }
 

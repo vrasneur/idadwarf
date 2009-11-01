@@ -55,7 +55,7 @@ public:
     char buffer[MAXSTR];
 
     va_start(ap, fmt);
-    (void)qvsnprintf(buffer, sizeof(buffer), fmt, ap);
+    qvsnprintf(buffer, sizeof(buffer), fmt, ap);
     va_end(ap);
 
     oss << '(' << file << ':' << line << ") " <<
@@ -221,13 +221,23 @@ private:
 class CUsHolder : public qvector<Dwarf_Die>
 {
 public:
-  CUsHolder(Dwarf_Debug dbg)
-    : m_dbg(dbg)
+  CUsHolder(Dwarf_Debug dbg, int fd)
+    : m_dbg(dbg), m_fd(fd)
   {
 
   }
 
-  virtual ~CUsHolder(void) throw();
+  virtual ~CUsHolder(void) throw()
+  {
+    clean();
+  }
+
+  void reset(Dwarf_Debug dbg, int fd)
+  {
+    clean();
+    m_dbg = dbg;
+    m_fd = fd;
+  }
 
   Dwarf_Debug get_dbg(void) const throw()
   {
@@ -236,6 +246,9 @@ public:
 
 private:
   Dwarf_Debug m_dbg;
+  int m_fd;
+
+  void clean(void) throw();
 
   // no copying or assignment
   CUsHolder(CUsHolder const &);

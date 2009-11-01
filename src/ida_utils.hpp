@@ -1,4 +1,3 @@
-
 #ifndef IDADWARF_IDA_UTILS_HPP
 #define IDADWARF_IDA_UTILS_HPP
 
@@ -54,7 +53,7 @@ ulong get_typedef_ordinal(type_t const *typedef_type);
 
 char const *get_typedef_name(type_t const *typedef_type);
 
-ulong resolve_typedef_ordinal(type_t const*typedef_type);
+ulong resolve_typedef_ordinal(type_t const *typedef_type);
 
 ulong resolve_typedef_ordinal(ulong const typedef_ordinal);
 

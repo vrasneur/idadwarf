@@ -632,7 +632,7 @@ void DieHolder::init(Dwarf_Debug dbg, Dwarf_Die die, bool const dealloc_die)
   m_dealloc_die = dealloc_die;
 }
 
-CUsHolder::~CUsHolder(void) throw()
+void CUsHolder::clean(void) throw()
 {
   Dwarf_Error err = NULL;
   int ret = 0;
@@ -650,6 +650,12 @@ CUsHolder::~CUsHolder(void) throw()
   }
 
   clear();
+
+  m_dbg = NULL;
+  if(m_fd != -1)
+  {
+    close(m_fd), m_fd = -1;
+  }
 }
 
 void do_dies_traversal(CUsHolder const &cus_holder,

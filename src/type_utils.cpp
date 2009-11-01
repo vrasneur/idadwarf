@@ -105,7 +105,7 @@ int EnumCmp::visit_const(const_t cid, uval_t value) throw()
     char *buf = static_cast<char *>(qalloc(len));
     if(buf != NULL)
     {
-      (void)get_const_name(cid, buf, len);
+      get_const_name(cid, buf, len);
       m_consts[buf] = value;
       ret = 0;
     }
@@ -223,7 +223,7 @@ void StrucCmp::add_all_members(void) throw()
         char *buf = static_cast<char *>(qalloc(len));
         if(buf != NULL)
         {
-          (void)get_member_name(mptr->id, buf, len);
+          get_member_name(mptr->id, buf, len);
           m_members[buf] = m_is_union ? 0 : mptr->soff;
         }
       }

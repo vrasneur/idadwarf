@@ -236,7 +236,7 @@ static void process_unspecified(GCC_UNUSED DieHolder &unspecified_holder)
 {
   die_cache cache;
 
-  (void)add_unspecified_type(&cache);
+  add_unspecified_type(&cache);
 }
 
 static bool look_ref_type(DieHolder &modifier_holder, die_cache *cache)
