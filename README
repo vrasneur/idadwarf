@@ -57,8 +57,6 @@ Some limitations of the plugin:
 * only ELF files are supported.
 * types retrieval works for all the architectures, other retrievals (functions, variables, ...)
   can only be performed when working on an IA32 (metapc) program.
-* no stack frame information retrieval for FPO-based functions
-  (i.e. that do not use the frame pointer).
 * the heuristics used by the plugin can fail...
 * if the debugging symbols are crappy, no data will be imported.
 * the compilation procedure is funky ;-)

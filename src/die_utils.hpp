@@ -34,7 +34,42 @@ struct OffsetArea : public area_t
   sval_t offset;
 };
 
-typedef qvector<OffsetArea> OffsetAreas;
+class OffsetAreas : public qvector<OffsetArea>
+{
+public:
+  OffsetAreas(void) throw()
+    : m_atom(DW_OP_breg5), m_base(0), m_rel_addr(BADADDR)
+  {
+
+  }
+
+  void set_stack_base(sval_t const base, ea_t const rel_addr) throw()
+  {
+    m_atom = DW_OP_breg4;
+    m_base = base;
+    m_rel_addr = rel_addr;
+  }
+
+  Dwarf_Small get_atom(void) const throw()
+  {
+    return m_atom;
+  }
+
+  sval_t get_base(void) const throw()
+  {
+    return m_base;
+  }
+
+  sval_t get_rel_addr(void) const throw()
+  {
+    return m_rel_addr;
+  }
+
+private:
+  Dwarf_Small m_atom; // Dwarf location atom to get the offset from
+  sval_t m_base;
+  ea_t m_rel_addr; // CU relative address where the base is applicable
+};
 
 // forward class declaration
 class DieHolder;
@@ -143,7 +178,7 @@ public:
     return get_operand(DW_AT_location, rel_addr, DW_OP_fbreg, offset);
   }
 
-  void get_frame_pointer_offsets(OffsetAreas &offset_areas);
+  void get_frame_base_offsets(OffsetAreas &offset_areas);
 
   bool get_var_addr(Dwarf_Unsigned *addr)
   {
@@ -221,7 +256,7 @@ private:
 class CUsHolder : public qvector<Dwarf_Die>
 {
 public:
-  CUsHolder(Dwarf_Debug dbg, int fd)
+  CUsHolder(Dwarf_Debug dbg, int const fd)
     : m_dbg(dbg), m_fd(fd)
   {
 
@@ -232,7 +267,7 @@ public:
     clean();
   }
 
-  void reset(Dwarf_Debug dbg, int fd)
+  void reset(Dwarf_Debug dbg, int const fd)
   {
     clean();
     m_dbg = dbg;

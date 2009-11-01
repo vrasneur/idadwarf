@@ -38,8 +38,9 @@ static var_type get_var_type(Dwarf_Small const atom)
   case DW_OP_reg8:
     type = VAR_REGISTER;
     break;
-  case DW_OP_breg5:
-  case DW_OP_fbreg:
+  case DW_OP_breg4: // esp-based
+  case DW_OP_breg5: // ebp-based
+  case DW_OP_fbreg: // frame base (depends...)
     type = VAR_STACK;
     break;
   case DW_OP_addr:
@@ -334,7 +335,7 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
       bool found = false;
 
       // ebp based location?
-      if(loc->lr_atom == DW_OP_breg5)
+      if(loc->lr_atom == offset_areas.get_atom())
       {
         offset = loc->lr_number;
         found = true;
@@ -342,29 +343,38 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
       // frame-base based location?
       else if(loc->lr_atom == DW_OP_fbreg && offset_areas.size() != 0)
       {
-        // frame-base offset is from the subprogram
+        area_t area(offset_areas[0].startEA, offset_areas[0].endEA);
+
+        // frame-base offset is applicable for the entire subprogram?
         if(!locdesc->ld_from_loclist)
         {
-          offset = offset_areas[0].offset + loc->lr_number;
-          DEBUG("found a stack frame var in a location block name='%s' offset=%ld\n", var_name, offset);
-          found = true;
+          ea_t const rel_addr = offset_areas.get_rel_addr();
+
+          if(rel_addr != BADADDR)
+          {
+            // ESP-based special case
+            // we only know the "base stack offset" for this address
+            area.startEA = rel_addr;
+            area.endEA = rel_addr + 1;
+          }
         }
         else
         {
-          // frame-base offset is from the location list of the variable
-          area_t area(locdesc->ld_lopc, locdesc->ld_hipc);
+          // frame-base offset will be retrieved with the location list of the variable
+          area.startEA = locdesc->ld_lopc;
+          area.endEA = locdesc->ld_hipc;
+        }
 
-          for(size_t idx = 0; idx < offset_areas.size(); ++idx)
+        for(size_t idx = 0; idx < offset_areas.size(); ++idx)
+        {
+          OffsetArea const &offset_area = offset_areas[idx];
+
+          if(offset_area.contains(area))
           {
-            OffsetArea const &offset_area = offset_areas[idx];
-
-            if(offset_area.contains(area))
-            {
-              offset = offset_area.offset + loc->lr_number;
-              DEBUG("found a stack frame var in a location list name='%s' offset=%ld\n", var_name, offset);
-              found = true;
-              break;
-            }
+            offset = offset_area.offset + loc->lr_number;
+            DEBUG("found a stack frame var in a location list name='%s' offset=%ld\n", var_name, offset);
+            found = true;
+            break;
           }
         }
       }
@@ -375,6 +385,9 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
         // get its type now
         bool type_found = false;
         ulong ordinal = 0;
+
+        // but before, adjust the offset from the esp base if needed
+        offset += offset_areas.get_base();
 
         if(!var_holder.get_type_ordinal(&ordinal))
         {
@@ -625,18 +638,26 @@ static void process_subprogram(DieHolder &subprogram_holder)
 
     if(funptr != NULL)
     {
-#if 0
-// TODO: esp-based heuristic
-//    sval_t min_spd = get_spd(funptr, get_min_spd_ea(funptr));
-//    char const *name = subprogram_holder.get_name();
-//    MSG("name: '%s' min_spd=%d\n'", name, min_spd);
-#endif
       DieHolder cu_holder(subprogram_holder.get_dbg(),
                           subprogram_holder.get_CU_offset());
       ea_t const cu_low_pc = static_cast<ea_t>(cu_holder.get_addr_from_attr(DW_AT_low_pc));
       OffsetAreas offset_areas;
 
-      subprogram_holder.get_frame_pointer_offsets(offset_areas);
+      // FPO-based function?
+      if((funptr->flags & FUNC_FRAME) == 0)
+      {
+        ea_t const ea = get_min_spd_ea(funptr);
+
+        if(ea != BADADDR)
+        {
+          // Heuristic: get the esp delta IDA uses as a base for all the stack vars
+          sval_t const min_spd = get_spd(funptr, ea);
+
+          offset_areas.set_stack_base(min_spd, ea - cu_low_pc);
+        }
+      }
+
+      subprogram_holder.get_frame_base_offsets(offset_areas);
 
       process_func_vars(subprogram_holder, funptr, cu_low_pc, offset_areas);
 
