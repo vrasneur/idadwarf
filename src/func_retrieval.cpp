@@ -688,6 +688,17 @@ static void process_subprogram(DieHolder &subprogram_holder)
       // is it the function entry chunk?
       if(funptr->startEA == low_pc)
       {
+        Dwarf_Bool const is_external = subprogram_holder.get_attr_flag(DW_AT_external);
+
+        if(is_external)
+        {
+          funptr->flags &= ~FUNC_STATIC;
+        }
+        else
+        {
+          funptr->flags |= FUNC_STATIC;
+        }
+
         // we are really in the right function, set its return type
         ok = add_subprogram_return(subprogram_holder, funptr);
         if(ok)
