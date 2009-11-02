@@ -502,7 +502,6 @@ static bool process_func_static_var(DieHolder &var_holder, Dwarf_Locdesc const *
   return ok;
 }
 
-// TODO: stack var with fpo-based functions
 static void visit_func_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
                            func_t *funptr, ea_t const cu_low_pc,
                            OffsetAreas const &offset_areas)
