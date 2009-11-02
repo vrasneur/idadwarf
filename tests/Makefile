@@ -1,6 +1,6 @@
 DBGFLAGS := -O0 -ggdb3
 
-BIN := testfpo testnotfpo teststripdbg
+BIN := testfpo testnotfpo teststripdbg test2
 
 .PHONY: clean
 
@@ -19,6 +19,10 @@ teststripdbg: testnotfpo
 	cp $< $@
 	objcopy --only-keep-debug $< $@.dbg
 	objcopy --strip-debug $@
+
+# normal, with enums and structs
+test2: test2.c
+	gcc $(DBGFLAGS) $^ -o $@
 
 clean:
 	-rm -f $(BIN) *.dbg

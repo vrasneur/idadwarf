@@ -25,34 +25,29 @@ using namespace std;
 
 struct OffsetArea : public area_t
 {
-  OffsetArea(ea_t ea1, ea_t ea2, sval_t offset_)
-    : offset(offset_)
+  OffsetArea(ea_t ea1, ea_t ea2, sval_t offset_, bool use_fp_)
+    : offset(offset_), use_fp(use_fp_)
   {
     startEA = ea1;
     endEA = ea2;
   }
   sval_t offset;
+  bool use_fp;
 };
 
 class OffsetAreas : public qvector<OffsetArea>
 {
 public:
   OffsetAreas(void) throw()
-    : m_atom(DW_OP_breg5), m_base(0), m_rel_addr(BADADDR)
+    : m_base(0), m_rel_addr(BADADDR)
   {
 
   }
 
   void set_stack_base(sval_t const base, ea_t const rel_addr) throw()
   {
-    m_atom = DW_OP_breg4;
     m_base = base;
     m_rel_addr = rel_addr;
-  }
-
-  Dwarf_Small get_atom(void) const throw()
-  {
-    return m_atom;
   }
 
   sval_t get_base(void) const throw()
@@ -66,7 +61,6 @@ public:
   }
 
 private:
-  Dwarf_Small m_atom; // Dwarf location atom to get the offset from
   sval_t m_base;
   ea_t m_rel_addr; // CU relative address where the base is applicable
 };

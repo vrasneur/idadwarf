@@ -38,8 +38,8 @@ static var_type get_var_type(Dwarf_Small const atom)
   case DW_OP_reg8:
     type = VAR_REGISTER;
     break;
-  case DW_OP_breg4: // esp-based
-  case DW_OP_breg5: // ebp-based
+  case DW_OP_breg4: // esp based
+  case DW_OP_breg5: // ebp based
   case DW_OP_fbreg: // frame base (depends...)
     type = VAR_STACK;
     break;
@@ -318,6 +318,78 @@ static void set_stack_var_type_cmt(struc_t *fptr, char const *var_name)
   }
 }
 
+static bool set_stack_var(DieHolder &var_holder, func_t *funptr, sval_t const offset)
+{
+  char const *var_name = var_holder.get_name();
+  struc_t *fptr = get_frame(funptr);
+  bool type_found = false;
+  ulong ordinal = 0;
+  bool ok = false;
+
+  if(!var_holder.get_type_ordinal(&ordinal))
+  {
+    MSG("cannot retrieve type offset for frame variable "
+        "name='%s' offset=0x%" DW_PR_DUx "\n", 
+        var_name, var_holder.get_offset());
+  }
+  else
+  {
+    typeinfo_t mt;
+    type_t const *type = NULL;
+    flags_t flags = fill_typeinfo(&mt, ordinal, &type);
+
+    if(type != NULL)
+    {
+      // override type size for structs (we get an error if we don't do that...)
+      size_t const size = (flags == struflag() ? get_struc_size(mt.tid) :
+                           get_type_size0(idati, type));
+
+      if(size == BADSIZE)
+      {
+        MSG("cannot get size of stack frame var name='%s'\n", var_name);
+      }
+      else
+      {
+        if(flags != 0)
+        {
+          ok = add_stkvar2(funptr, var_name, offset, 0, &mt, size);
+          if(ok)
+          {
+            set_stack_var_complex_type(fptr, var_name);
+          }
+        }
+        else
+        {
+          // not a struct/union nor an enum
+          ok = add_stkvar2(funptr, var_name, offset, flags, NULL, size);
+
+          if(ok)
+          {
+            member_t *mptr = get_member_by_name(fptr, var_name);
+            if(mptr != NULL)
+            {
+              ok = set_member_tinfo(idati, fptr, mptr, 0, type, NULL, 0);
+            }
+          }
+        }
+
+        set_stack_var_type_cmt(fptr, var_name);
+        DEBUG("found type for stack var name='%s' offset=0x%" DW_PR_DUx "\n",
+              var_name, var_holder.get_offset());
+        type_found = true;
+      }
+    }
+  }
+
+  // no type info found at all? only set the name
+  if(!type_found)
+  {
+    ok = add_stkvar2(funptr, var_name, offset, 0, NULL, 0);
+  }
+
+  return ok;
+}
+
 static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
                               func_t *funptr, OffsetAreas const &offset_areas)
 {
@@ -331,36 +403,30 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
     // a stack frame variable has the current name?
     if(get_member_by_name(fptr, var_name) == NULL)
     {
+      ea_t const rel_addr = offset_areas.get_rel_addr();
       sval_t offset = 0;
       bool found = false;
 
       // ebp based location?
-      if(loc->lr_atom == offset_areas.get_atom())
+      if(loc->lr_atom == DW_OP_breg5)
       {
         offset = loc->lr_number;
+        found = true;
+      }
+      // esp based location?
+      else if(loc->lr_atom == DW_OP_breg4 && rel_addr != BADADDR)
+      {
+        offset = loc->lr_number + offset_areas.get_base();
         found = true;
       }
       // frame-base based location?
       else if(loc->lr_atom == DW_OP_fbreg && offset_areas.size() != 0)
       {
-        area_t area(offset_areas[0].startEA, offset_areas[0].endEA);
+        area_t area(BADADDR, BADADDR);
 
-        // frame-base offset is applicable for the entire subprogram?
-        if(!locdesc->ld_from_loclist)
+        // frame-base offset can be retrieved with the location list of the variable?
+        if(locdesc->ld_from_loclist)
         {
-          ea_t const rel_addr = offset_areas.get_rel_addr();
-
-          if(rel_addr != BADADDR)
-          {
-            // ESP-based special case
-            // we only know the "base stack offset" for this address
-            area.startEA = rel_addr;
-            area.endEA = rel_addr + 1;
-          }
-        }
-        else
-        {
-          // frame-base offset will be retrieved with the location list of the variable
           area.startEA = locdesc->ld_lopc;
           area.endEA = locdesc->ld_hipc;
         }
@@ -369,9 +435,33 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
         {
           OffsetArea const &offset_area = offset_areas[idx];
 
+          if(!locdesc->ld_from_loclist)
+          {
+            // frame-base offset can be retrieved from the entire subprogram
+            if(offset_area.use_fp)
+            {
+              area.startEA = offset_area.startEA;
+              area.endEA = offset_area.endEA;
+            }
+            else if(rel_addr != BADADDR)
+            {
+              // esp based special case
+              // we know the "base stack offset" only for this address
+              area.startEA = rel_addr;
+              area.endEA = rel_addr + 1;
+            }
+            else
+            {
+              // esp based, but no "base stack address"
+              // we cannot do anything
+              continue;
+            }
+          }
+
           if(offset_area.contains(area))
           {
-            offset = offset_area.offset + loc->lr_number;
+            offset = (offset_area.offset + loc->lr_number +
+                      (offset_area.use_fp ? 0 : offset_areas.get_base()));
             DEBUG("found a stack frame var in a location list name='%s' offset=%ld\n", var_name, offset);
             found = true;
             break;
@@ -382,73 +472,8 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
       if(found)
       {
         // we got the variable offset in the stack
-        // get its type now
-        bool type_found = false;
-        ulong ordinal = 0;
-
-        // but before, adjust the offset from the esp base if needed
-        offset += offset_areas.get_base();
-
-        if(!var_holder.get_type_ordinal(&ordinal))
-        {
-          MSG("cannot retrieve type offset for frame variable "
-              "name='%s' offset=0x%" DW_PR_DUx "\n", 
-              var_name, var_holder.get_offset());
-        }
-        else
-        {
-          typeinfo_t mt;
-          type_t const *type = NULL;
-          flags_t flags = fill_typeinfo(&mt, ordinal, &type);
-
-          if(type != NULL)
-          {
-            // override type size for structs (we get an error if we don't do that...)
-            size_t const size = (flags == struflag() ? get_struc_size(mt.tid) :
-                                 get_type_size0(idati, type));
-
-            if(size == BADSIZE)
-            {
-              MSG("cannot get size of stack frame var name='%s'\n", var_name);
-            }
-            else
-            {
-              if(flags != 0)
-              {
-                ok = add_stkvar2(funptr, var_name, offset, 0, &mt, size);
-                if(ok)
-                {
-                  set_stack_var_complex_type(fptr, var_name);
-                }
-              }
-              else
-              {
-                // not a struct/union nor an enum
-                ok = add_stkvar2(funptr, var_name, offset, flags, NULL, size);
-
-                if(ok)
-                {
-                  member_t *mptr = get_member_by_name(fptr, var_name);
-                  if(mptr != NULL)
-                  {
-                    ok = set_member_tinfo(idati, fptr, mptr, 0, type, NULL, 0);
-                  }
-                }
-              }
-
-              set_stack_var_type_cmt(fptr, var_name);
-              DEBUG("found type for stack var name='%s' offset=0x%" DW_PR_DUx "\n",
-                    var_name, var_holder.get_offset());
-              type_found = true;
-            }
-          }
-        }
-
-        // no type info found at all? only set the name
-        if(!type_found)
-        {
-          ok = add_stkvar2(funptr, var_name, offset, 0, NULL, 0);
-        }
+        // get its type and add it to the stack frame
+        ok = set_stack_var(var_holder, funptr, offset);
       }
     }
   }

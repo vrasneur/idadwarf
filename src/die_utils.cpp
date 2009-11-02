@@ -328,6 +328,7 @@ void DieHolder::get_frame_base_offsets(OffsetAreas &offset_areas)
     if(locdesc->ld_cents == 1)
     {
       Dwarf_Loc *loc = &locdesc->ld_s[0];
+      Dwarf_Small const atom = loc->lr_atom;
 
       // from a location block?
       if(!locdesc->ld_from_loclist)
@@ -343,11 +344,12 @@ void DieHolder::get_frame_base_offsets(OffsetAreas &offset_areas)
       }
 
       // is it the right atom to get the offset from?
-      if(loc->lr_atom == offset_areas.get_atom())
+      if(atom == DW_OP_breg4 || atom == DW_OP_breg5)
       {
         offset_areas.push_back(OffsetArea(low_pc, high_pc,
                                           // operand is unsigned, but should be signed...
-                                          static_cast<sval_t>(loc->lr_number)));
+                                          static_cast<sval_t>(loc->lr_number),
+                                          (atom == DW_OP_breg5)));
       }
     }
   }
