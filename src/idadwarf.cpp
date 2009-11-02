@@ -208,6 +208,8 @@ void idaapi run(GCC_UNUSED int arg)
 #if 0
     retrieve_macros(dbg);
 #endif
+
+    MSG("DWARF analysis is finished!\n");
   }
 }
 

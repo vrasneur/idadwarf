@@ -438,24 +438,20 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
           if(!locdesc->ld_from_loclist)
           {
             // frame-base offset can be retrieved from the entire subprogram
-            if(offset_area.use_fp)
+            if(offset_area.use_fp ||
+               (rel_addr != BADADDR && offset_area.startEA >= rel_addr))
             {
               area.startEA = offset_area.startEA;
               area.endEA = offset_area.endEA;
             }
-            else if(rel_addr != BADADDR)
-            {
-              // esp based special case
-              // we know the "base stack offset" only for this address
-              area.startEA = rel_addr;
-              area.endEA = rel_addr + 1;
-            }
-            else
-            {
-              // esp based, but no "base stack address"
-              // we cannot do anything
-              continue;
-            }
+          }
+
+          // esp based, but area location is before the "base stack address"
+          // we cannot do anything
+          if(!offset_area.use_fp &&
+             (rel_addr == BADADDR || area.startEA < rel_addr))
+          {
+            continue;
           }
 
           if(offset_area.contains(area))
@@ -660,12 +656,22 @@ static void process_subprogram(DieHolder &subprogram_holder)
 
     func_t *funptr = get_func(low_pc);
 
-    if(funptr != NULL)
+    if(funptr != NULL && funptr->startEA == low_pc)
     {
       DieHolder cu_holder(subprogram_holder.get_dbg(),
                           subprogram_holder.get_CU_offset());
       ea_t const cu_low_pc = static_cast<ea_t>(cu_holder.get_addr_from_attr(DW_AT_low_pc));
       OffsetAreas offset_areas;
+      Dwarf_Bool const is_external = subprogram_holder.get_attr_flag(DW_AT_external);
+
+      if(is_external)
+      {
+        funptr->flags &= ~FUNC_STATIC;
+      }
+      else
+      {
+        funptr->flags |= FUNC_STATIC;
+      }
 
       // FPO-based function?
       if((funptr->flags & FUNC_FRAME) == 0)
@@ -685,28 +691,13 @@ static void process_subprogram(DieHolder &subprogram_holder)
 
       process_func_vars(subprogram_holder, funptr, cu_low_pc, offset_areas);
 
-      // is it the function entry chunk?
-      if(funptr->startEA == low_pc)
+      // set the function return type
+      ok = add_subprogram_return(subprogram_holder, funptr);
+      if(ok)
       {
-        Dwarf_Bool const is_external = subprogram_holder.get_attr_flag(DW_AT_external);
-
-        if(is_external)
-        {
-          funptr->flags &= ~FUNC_STATIC;
-        }
-        else
-        {
-          funptr->flags |= FUNC_STATIC;
-        }
-
-        // we are really in the right function, set its return type
-        ok = add_subprogram_return(subprogram_holder, funptr);
-        if(ok)
-        {
-          DEBUG("added function name='%s' offset=%lu\n",
-                subprogram_holder.get_name(), funptr->startEA);
-          subprogram_holder.cache_func(funptr->startEA);
-        }
+        DEBUG("added function name='%s' offset=%lu\n",
+              subprogram_holder.get_name(), funptr->startEA);
+        subprogram_holder.cache_func(funptr->startEA);
       }
     }
   }
