@@ -508,22 +508,6 @@ void DieHolder::enable_abstract_origin(void)
       Dwarf_Off const offset = get_ref_from_attr(DW_AT_abstract_origin);
 
       m_origin_holder.reset(new DieHolder(m_dbg, offset));
-
-      // if it is a useless DIE, disable the abstract origin DIE
-      if(m_origin_holder.get() != NULL &&
-         m_origin_holder->get_nb_attrs() == 1)
-      {
-        Dwarf_Die child_die = m_origin_holder->get_child();
-
-        if(child_die == NULL)
-        {
-          m_origin_holder.reset();
-        }
-        else
-        {
-          dwarf_dealloc(m_dbg, child_die, DW_DLA_DIE);
-        }
-      }
     }
   }
 }

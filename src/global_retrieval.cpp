@@ -8,6 +8,8 @@
 
 void process_global_var(DieHolder &var_holder)
 {
+  var_holder.enable_abstract_origin();
+
   if(var_holder.get_attr(DW_AT_location) != NULL)
   {
     Dwarf_Unsigned addr = 0;

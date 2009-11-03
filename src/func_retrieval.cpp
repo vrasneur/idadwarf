@@ -247,6 +247,8 @@ static bool process_register_var(DieHolder &var_holder, Dwarf_Locdesc const *loc
     if(locdesc->ld_from_loclist)
     {
       char *comment = var_holder.get_type_comment();
+      // TODO: make sure the startEA-endEA range is code for IDA
+      //       and convert the range to code if needed
       ea_t const startEA = locdesc->ld_lopc + cu_low_pc;
       ea_t const endEA = locdesc->ld_hipc + cu_low_pc;
       int const ret = add_regvar(funptr, startEA, endEA,
