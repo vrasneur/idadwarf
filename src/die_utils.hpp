@@ -289,18 +289,18 @@ private:
 typedef void(*die_visitor_fun)(DieHolder &die);
 
 // wrapper to have an exception-safe visiting function
-#define TRY_VISIT_DIE(visitor)                             \
-  static inline void try_##visitor(DieHolder &die_holder)  \
-  {                                                        \
-    try                                                    \
-    {                                                      \
-      visitor(die_holder);                                 \
-    }                                                      \
-    catch(DieException const &exc)                         \
-    {                                                      \
-      MSG("cannot process DIE (skipping): %s\n",           \
-          exc.what());                                     \
-    }                                                      \
+#define TRY_VISIT_DIE(visitor)                                  \
+  static inline void try_##visitor(DieHolder &die_holder)       \
+  {                                                             \
+    try                                                         \
+    {                                                           \
+      visitor(die_holder);                                      \
+    }                                                           \
+    catch(DieException const &exc)                              \
+    {                                                           \
+      MSG("cannot process DIE (skipping): %s\n",                \
+          exc.what());                                          \
+    }                                                           \
   }
 
 void do_dies_traversal(CUsHolder const &cus_holder,

@@ -44,8 +44,8 @@ void visit_global_die(DieHolder &die_holder)
 
     switch(tag)
     {
-    // all local/register variables have been processed
-    // when retrieving functions
+      // all local/register variables have been processed
+      // when retrieving functions
     case DW_TAG_variable:
       process_global_var(die_holder);
       break;

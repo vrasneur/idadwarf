@@ -249,7 +249,7 @@ static bool look_ref_type(DieHolder &modifier_holder, die_cache *cache)
     found = add_unspecified_type(cache);
   }
   else
-  // need to find the original type?
+    // need to find the original type?
   {
     Dwarf_Off offset = modifier_holder.get_ref_from_attr(DW_AT_type);
     DieHolder new_die(modifier_holder.get_dbg(), offset);
@@ -315,7 +315,7 @@ static void process_typed_modifier(DieHolder &modifier_holder, die_cache const *
         break;
       default:
         break;
-      } 
+      }
     }
 
     if(ok)
@@ -591,7 +591,7 @@ static void add_structure_member(DieHolder *member_holder, struc_t *sptr,
 
 // find if the struct/union being processed is the copy of another one
 static tid_t get_other_structure(DieHolder &structure_holder, char const *name,
-                          ulong *ordinal)
+                                 ulong *ordinal)
 {
   tid_t struc_id = BADNODE;
   tid_t other_id = get_struc_id(name);
@@ -638,7 +638,7 @@ static tid_t get_other_structure(DieHolder &structure_holder, char const *name,
 // maybe add a new structure
 // and find the declaration ordinal if existing
 static tid_t decl_add_struc(char const *name, bool const is_union,
-                     ulong *decl_ordinal)
+                            ulong *decl_ordinal)
 {
   if(name != NULL)
   {
@@ -657,7 +657,7 @@ static tid_t decl_add_struc(char const *name, bool const is_union,
 
 // structure/union processing (no incomplete type)
 static void process_complete_structure(DieHolder &structure_holder, char const *name,
-                                ulong *ordinal, bool *second_pass)
+                                       ulong *ordinal, bool *second_pass)
 {
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
   ulong decl_ordinal = 0;
@@ -744,7 +744,7 @@ static void process_structure(DieHolder &structure_holder)
 }
 
 static void add_subroutine_parameter(DieHolder *param_holder, qtype &params_type,
-                              bool *second_pass)
+                                     bool *second_pass)
 {
   Dwarf_Off offset = param_holder->get_ref_from_attr(DW_AT_type);
   DieHolder new_die(param_holder->get_dbg(), offset);
@@ -868,7 +868,7 @@ static void process_subroutine(DieHolder &subroutine_holder)
   if(!saved)
   {
     MSG("cannot process function type offset=0x%" DW_PR_DUx "\n",
-      subroutine_holder.get_offset());
+        subroutine_holder.get_offset());
     subroutine_holder.cache_useless();
   }
   else
@@ -921,7 +921,7 @@ void visit_type_die(DieHolder &die_holder)
 
 // find members we did not get when doing first pass
 static void second_process_structure(DieHolder &structure_holder,
-                              ulong const ordinal)
+                                     ulong const ordinal)
 {
   char const *type_name = get_numbered_type_name(idati, ordinal);
   tid_t struc_id = get_struc_id(type_name);
@@ -1062,7 +1062,7 @@ static void do_second_pass(Dwarf_Debug dbg)
 
 // update a simple (i.e. not BT_COMPLEX) type in all members of all struct/unions
 static void update_structure_member(Dwarf_Debug dbg, Dwarf_Half const tag,
-                             qtype const &old_type, qtype const &new_type)
+                                    qtype const &old_type, qtype const &new_type)
 {
   for(CachedDieIterator struc_iter(dbg, tag);
       *struc_iter != NULL; ++struc_iter)

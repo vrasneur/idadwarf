@@ -317,8 +317,8 @@ bool apply_die_type(DieHolder &die_holder, ea_t const addr)
 
   if(!ok)
   {
-      MSG("cannot retrieve type offset for DIE at offset=0x%" DW_PR_DUx "\n", 
-          die_holder.get_offset());
+    MSG("cannot retrieve type offset for DIE at offset=0x%" DW_PR_DUx "\n",
+        die_holder.get_offset());
   }
   else
   {
@@ -415,5 +415,5 @@ ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type
     }
   }
 
-  return ordinal;    
+  return ordinal;
 }

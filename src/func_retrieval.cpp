@@ -296,7 +296,7 @@ static void set_stack_var_type_cmt(struc_t *fptr, char const *var_name)
   {
     qtype type;
     qtype fields;
-    
+
     bool const ok = get_or_guess_member_tinfo(mptr, &type, &fields);
 
     if(ok)
@@ -305,7 +305,7 @@ static void set_stack_var_type_cmt(struc_t *fptr, char const *var_name)
       // so allocate a huge buffer on the stack...
       char buf[MAXSTR];
       int const ret = print_type_to_one_line(buf, sizeof(buf), idati, type.c_str(), var_name,
-                                       NULL, fields.c_str(), NULL);
+                                             NULL, fields.c_str(), NULL);
 
       if(ret < 0)
       {
@@ -331,7 +331,7 @@ static bool set_stack_var(DieHolder &var_holder, func_t *funptr, sval_t const of
   if(!var_holder.get_type_ordinal(&ordinal))
   {
     MSG("cannot retrieve type offset for frame variable "
-        "name='%s' offset=0x%" DW_PR_DUx "\n", 
+        "name='%s' offset=0x%" DW_PR_DUx "\n",
         var_name, var_holder.get_offset());
   }
   else
@@ -477,7 +477,7 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
   }
 
   return ok;
-}                       
+}
 
 static bool process_func_static_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc)
 {
@@ -544,7 +544,7 @@ static void visit_func_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
 }
 
 static void process_func_vars(DieHolder &locals_holder, func_t *funptr,
-                               ea_t const cu_low_pc, OffsetAreas const &offset_areas)
+                              ea_t const cu_low_pc, OffsetAreas const &offset_areas)
 {
   for(DieChildIterator iter(locals_holder, DW_TAG_formal_parameter);
       *iter != NULL; ++iter)
@@ -602,7 +602,7 @@ static bool add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
     if(!subprogram_holder.get_type_ordinal(&ordinal))
     {
       MSG("cannot retrieve return type"
-          " for function name='%s' offset=0x%" DW_PR_DUx "\n", 
+          " for function name='%s' offset=0x%" DW_PR_DUx "\n",
           subprogram_holder.get_name(), subprogram_holder.get_offset());
     }
     else
@@ -792,7 +792,7 @@ static void my_apply_callee_type(func_t *funptr, ea_t const call_addr)
     do
     {
       ea_t const prev_addr = decode_prev_insn(addr);
-      
+
       if(prev_addr == BADADDR || cmd.itype == NN_call)
       {
         break;

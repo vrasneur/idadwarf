@@ -280,7 +280,7 @@ bool DieHolder::get_operand(int const attr, ea_t const rel_addr, Dwarf_Small con
       }
     }
   }
-  
+
   if(found)
   {
     CHECK_DWERR2(locdesc->ld_cents != 1, NULL,
@@ -401,7 +401,7 @@ Dwarf_Signed DieHolder::get_attr_small_val(int attr)
 Dwarf_Bool DieHolder::get_attr_flag(int attr)
 {
   Dwarf_Attribute attrib = get_attr(attr);
-  Dwarf_Bool flag = (attrib != NULL); 
+  Dwarf_Bool flag = (attrib != NULL);
 
   if(flag)
   {
@@ -586,7 +586,7 @@ char *DieHolder::get_type_comment(void)
     bool const found = get_numbered_type(idati, ordinal, &type, &fields);
 
     if(found)
-    {      
+    {
       // dynamic type string allocation does not work (returns T_SHORTSTR)
       // so allocate a huge buffer on the stack...
       char buf[MAXSTR];

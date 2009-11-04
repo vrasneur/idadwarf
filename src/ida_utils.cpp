@@ -81,7 +81,7 @@ void make_new_type(qtype &new_type, type_t const *type, ulong const ordinal)
 // simple == no fields or C++ class infos
 // returns true => the same type with the same name already exists
 bool find_simple_type(char const *name, qtype const &ida_type, ulong *ordinal,
-                     bool *found)
+                      bool *found)
 {
   bool ret = false;
 
@@ -94,7 +94,7 @@ bool find_simple_type(char const *name, qtype const &ida_type, ulong *ordinal,
     type_t const *type = NULL;
     ulong existing_ordinal = 0;
     int ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
-                               NULL, NULL, NULL, NULL, &existing_ordinal);
+                            NULL, NULL, NULL, NULL, &existing_ordinal);
 
     // found an existing type with same name?
     if(ok != 0)
@@ -166,7 +166,7 @@ flags_t fill_typeinfo(typeinfo_t *mt, ulong const ordinal, type_t const **type)
   char const *type_name = get_numbered_type_name(idati, ordinal);
   bool const ok = get_numbered_type(idati, ordinal, type);
   flags_t flags = 0;
-  
+
   if(type_name == NULL || !ok)
   {
     MSG("cannot get member type from ordinal=%lu\n", ordinal);
@@ -296,7 +296,7 @@ char const *get_typedef_name(type_t const *typedef_type)
     name = get_numbered_type_name(idati, ordinal);
   }
 
-  return name;  
+  return name;
 }
 
 // same as get_typedef_ordinal, but recursively get the ordinal

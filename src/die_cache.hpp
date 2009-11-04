@@ -61,7 +61,7 @@ public:
   bool in_cache(Dwarf_Off const offset) throw()
   {
     return (m_dies_node.supval(static_cast<sval_t>(offset), NULL,
-                                sizeof(die_cache)) != -1);
+                               sizeof(die_cache)) != -1);
   }
 
   // cache getters

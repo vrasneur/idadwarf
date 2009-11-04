@@ -131,7 +131,7 @@ void DieCache::cache_func(Dwarf_Off const offset, ea_t const startEA) throw()
   if(startEA != BADADDR)
   {
     die_cache const cache = { DIE_FUNC, { startEA } };
-  
+
     cache_useful(offset, static_cast<sval_t>(startEA), &cache);
   }
 }
