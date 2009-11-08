@@ -166,7 +166,7 @@ static void set_register_var_operand_type(DieHolder &var_holder, char const *reg
                                           ea_t const startEA, ea_t const endEA)
 {
   Dwarf_Off const offset = var_holder.get_ref_from_attr(DW_AT_type);
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
   bool ok = diecache.get_cache_type_ordinal(offset, &ordinal);
   struc_t *sptr = NULL;
   enum_t enum_id = BADNODE;
@@ -325,7 +325,7 @@ static bool set_stack_var(DieHolder &var_holder, func_t *funptr, sval_t const of
   char const *var_name = var_holder.get_name();
   struc_t *fptr = get_frame(funptr);
   bool type_found = false;
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
   bool ok = false;
 
   if(!var_holder.get_type_ordinal(&ordinal))
@@ -597,7 +597,7 @@ static bool add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
   }
   else
   {
-    ulong ordinal = 0;
+    uint32 ordinal = 0;
 
     if(!subprogram_holder.get_type_ordinal(&ordinal))
     {
@@ -697,7 +697,7 @@ static void process_subprogram(DieHolder &subprogram_holder)
       ok = add_subprogram_return(subprogram_holder, funptr);
       if(ok)
       {
-        DEBUG("added function name='%s' offset=%lu\n",
+        DEBUG("added function name='%s' offset=%u\n",
               subprogram_holder.get_name(), funptr->startEA);
         subprogram_holder.cache_func(funptr->startEA);
       }

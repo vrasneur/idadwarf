@@ -1,16 +1,18 @@
 # mingw C++ cross-compiler
 CC := i386-mingw32-g++
+# ranlib
+RANLIB := i386-mingw32-ranlib
 # libelf source path
-ELFDIR := /home/vincent/prog/idadwarf/archives/libelf-0.8.11
+ELFDIR := /home/vincent/prog/idadwarf/archives/libelf-0.8.13
 # libdwarf source path
-DWARFDIR := /home/vincent/prog/idadwarf/archives/dwarf-20090710/libdwarf
+DWARFDIR := /home/vincent/prog/idadwarf/archives/dwarf-20091012/libdwarf
 # include path for IDA sdk
-IDAINC := /home/vincent/sources/idasdk/include
+IDAINC := /home/vincent/sources/idasdk55/include
 # ida.a library path
 # ... why ida.a and not libida.a?
-IDALIB := /home/vincent/sources/idasdk/libgcc.w32/ida.a
+IDALIB := /home/vincent/sources/idasdk55/libgcc.w32/ida.a
 # IDA path
-IDADIR := /home/vincent/.wine/drive_c/Program\ Files/IDA
+IDADIR := /home/vincent/.wine/drive_c/Program\ Files/IDA55
 # libelf and libdwarf prefix paths
 # you can keep the default value
 DEPSDIR := deps
@@ -69,19 +71,20 @@ $(IDADIR):
 	$(call check,isdir,$(IDADIR),IDA path not found)
 
 define compdep
-(cd $< && patch -N -p1 < $(CURDIR)/$(1) || autoconf && \
+(cd $< && $(1) && \
 CC="$(MACHINE)-gcc" $(2) ./configure --prefix="$(ABSDEPSDIR)" \
---host="$(MACHINE)" --disable-shared $(3) && make $(4))
+--host="$(MACHINE)" --disable-shared $(3) && make $(4) && \
+$(RANLIB) $(ABSDEPSDIR)/lib/$(5))
 endef
 
 $(LIBELF): $(ELFDIR)
-	$(call compdep,patch/libelf.patch,,\
-	--disable-nls --enable-compat --enable-elf64,all install)
+	$(call compdep,:,,\
+	--disable-nls --enable-compat --enable-elf64,all install,libelf.a)
 
 $(LIBDWARF): $(DWARFDIR)
-	$(call compdep,patch/libdwarf.patch,\
+	$(call compdep,patch -N -p1 < $(CURDIR)/patch/libdwarf.patch && autoconf,\
 	CPPFLAGS="-I$(ABSDEPSDIR)/include" LDFLAGS="-L$(ABSDEPSDIR)/lib",\
-	--enable-nonshared,libdwarf.a install)
+	--enable-nonshared,libdwarf.a install,libdwarf.a)
 
 $(OBJS): %.o: %.cpp
 	$(CC) $(CFLAGS) -c $< $(addprefix -I,$(INCLUDES))

@@ -3,7 +3,9 @@
 // IDA headers
 #include <ida.hpp>
 #include <nalt.hpp>
+
 #include <typeinf.hpp>
+//#undef BTMT_SPECFLT
 #include <enum.hpp>
 #include <struct.hpp>
 
@@ -31,7 +33,7 @@ static void process_enum(DieHolder &enumeration_holder)
 {
   char const *name = enumeration_holder.get_name();
   enum_t enum_id = BADNODE;
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
   EnumCmp::Ptr enum_cmp;
 
   if(name != NULL)
@@ -122,7 +124,7 @@ static void process_base_type(DieHolder &type_holder)
     switch(byte_size)
     {
     case 2:
-      ida_type[0] |= BTMT_SHRTFLT;
+      ida_type[0] |= BTMT_SPECFLT;
       break;
     case 4:
       ida_type[0] |= BTMT_FLOAT;
@@ -190,11 +192,11 @@ static void process_base_type(DieHolder &type_holder)
 
   if(!ida_type.empty())
   {
-    ulong ordinal = 0;
+    uint32 ordinal = 0;
     saved = set_simple_die_type(name, ida_type, &ordinal);
     if(!saved)
     {
-      msg("failed to save base type name='%s' ordinal=%lu\n", name, ordinal);
+      msg("failed to save base type name='%s' ordinal=%u\n", name, ordinal);
     }
     else
     {
@@ -211,14 +213,14 @@ static void process_base_type(DieHolder &type_holder)
 static bool add_unspecified_type(die_cache *cache)
 {
   qtype type;
-  ulong new_ordinal = 0;
+  uint32 new_ordinal = 0;
   bool saved = false;
 
   type.append(BTF_VOID);
   saved = set_simple_die_type("void", type, &new_ordinal);
   if(saved)
   {
-    DEBUG("added unspecified type ordinal=%lu\n", new_ordinal);
+    DEBUG("added unspecified type ordinal=%u\n", new_ordinal);
     cache->type = DIE_USELESS;
     cache->ordinal = new_ordinal;
     cache->base_ordinal = 0;
@@ -265,15 +267,15 @@ static bool look_ref_type(DieHolder &modifier_holder, die_cache *cache)
 static void process_typed_modifier(DieHolder &modifier_holder, die_cache const *cache)
 {
   type_t const *type = NULL;
-  ulong const type_ordinal = cache->ordinal;
-  ulong const base_ordinal = cache->base_ordinal;
+  uint32 const type_ordinal = cache->ordinal;
+  uint32 const base_ordinal = cache->base_ordinal;
   char const *type_name = get_numbered_type_name(idati, type_ordinal);
   bool ok = false;
 
   ok = get_numbered_type(idati, type_ordinal, &type);
   if(type_name == NULL || !ok)
   {
-    MSG("cannot get type from ordinal=%lu\n", type_ordinal);
+    MSG("cannot get type from ordinal=%u\n", type_ordinal);
     ok = false;
   }
   else
@@ -320,12 +322,12 @@ static void process_typed_modifier(DieHolder &modifier_holder, die_cache const *
 
     if(ok)
     {
-      ulong ordinal = 0;
+      uint32 ordinal = 0;
 
       ok = set_simple_die_type(NULL, new_type, &ordinal);
       if(ok)
       {
-        DEBUG("added modifier from original type='%s' ordinal=%lu\n", type_name, ordinal);
+        DEBUG("added modifier from original type='%s' ordinal=%u\n", type_name, ordinal);
         modifier_holder.cache_type(ordinal, false, base_ordinal ?: type_ordinal);
       }
     }
@@ -350,7 +352,7 @@ static void process_modifier(DieHolder &modifier_holder)
   }
 }
 
-static void process_typed_typedef(DieHolder &typedef_holder, ulong const type_ordinal)
+static void process_typed_typedef(DieHolder &typedef_holder, uint32 const type_ordinal)
 {
   char const *name = typedef_holder.get_name();
   char const *type_name = get_numbered_type_name(idati, type_ordinal);
@@ -358,12 +360,12 @@ static void process_typed_typedef(DieHolder &typedef_holder, ulong const type_or
 
   if(type_name == NULL)
   {
-    MSG("cannot get type name from ordinal=%lu\n", type_ordinal);
+    MSG("cannot get type name from ordinal=%u\n", type_ordinal);
     ok = false;
   }
   else
   {
-    ulong ordinal = 0;
+    uint32 ordinal = 0;
 
     // typedef for an anonymous type?
     // rename the existing type
@@ -423,7 +425,7 @@ static void process_typed_typedef(DieHolder &typedef_holder, ulong const type_or
 
     if(ok)
     {
-      DEBUG("typedef name='%s' original type ordinal=%lu\n", name, ordinal);
+      DEBUG("typedef name='%s' original type ordinal=%u\n", name, ordinal);
       typedef_holder.cache_type(ordinal);
     }
   }
@@ -466,7 +468,7 @@ static void process_array(DieHolder &array_holder)
     ok = get_numbered_type(idati, cache.ordinal, &type);
     if(type_name == NULL || !ok)
     {
-      MSG("cannot get type from ordinal=%lu\n", cache.ordinal);
+      MSG("cannot get type from ordinal=%u\n", cache.ordinal);
       ok = false;
     }
     else
@@ -503,17 +505,17 @@ static void process_array(DieHolder &array_holder)
       ok = build_array_type(&array_type, elem_type.c_str(), static_cast<int>(size));
       if(!ok)
       {
-        MSG("cannot build array type from original type='%s' ordinal=%lu\n",
+        MSG("cannot build array type from original type='%s' ordinal=%u\n",
             type_name, cache.ordinal);
       }
       else
       {
-        ulong ordinal = 0;
+        uint32 ordinal = 0;
 
         ok = set_simple_die_type(NULL, array_type, &ordinal);
         if(ok)
         {
-          DEBUG("added array from original type='%s' ordinal=%lu\n", type_name, cache.ordinal);
+          DEBUG("added array from original type='%s' ordinal=%u\n", type_name, cache.ordinal);
           array_holder.cache_type(ordinal);
         }
       }
@@ -591,7 +593,7 @@ static void add_structure_member(DieHolder *member_holder, struc_t *sptr,
 
 // find if the struct/union being processed is the copy of another one
 static tid_t get_other_structure(DieHolder &structure_holder, char const *name,
-                                 ulong *ordinal)
+                                 uint32 *ordinal)
 {
   tid_t struc_id = BADNODE;
   tid_t other_id = get_struc_id(name);
@@ -606,7 +608,7 @@ static tid_t get_other_structure(DieHolder &structure_holder, char const *name,
   }
   else if(sptr != NULL)
   {
-    ulong const other_ordinal = static_cast<ulong>(sptr->ordinal);
+    uint32 const other_ordinal = static_cast<uint32>(sptr->ordinal);
 
     if(other_ordinal != 0 && other_ordinal != BADADDR)
     {
@@ -638,11 +640,11 @@ static tid_t get_other_structure(DieHolder &structure_holder, char const *name,
 // maybe add a new structure
 // and find the declaration ordinal if existing
 static tid_t decl_add_struc(char const *name, bool const is_union,
-                            ulong *decl_ordinal)
+                            uint32 *decl_ordinal)
 {
   if(name != NULL)
   {
-    ulong ordinal = 0;
+    uint32 ordinal = 0;
     type_t const *type = NULL;
     bool const ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
                                    NULL, NULL, NULL, NULL, &ordinal);
@@ -657,10 +659,10 @@ static tid_t decl_add_struc(char const *name, bool const is_union,
 
 // structure/union processing (no incomplete type)
 static void process_complete_structure(DieHolder &structure_holder, char const *name,
-                                       ulong *ordinal, bool *second_pass)
+                                       uint32 *ordinal, bool *second_pass)
 {
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
-  ulong decl_ordinal = 0;
+  uint32 decl_ordinal = 0;
   tid_t struc_id = decl_add_struc(name, is_union, &decl_ordinal);
 
   if(struc_id == BADNODE)
@@ -710,7 +712,7 @@ static void process_structure(DieHolder &structure_holder)
   char const *name = structure_holder.get_name();
   Dwarf_Attribute declaration = structure_holder.get_attr(DW_AT_declaration);
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
   bool second_pass = false;
 
   // got an incomplete type?
@@ -737,7 +739,7 @@ static void process_structure(DieHolder &structure_holder)
   }
   else
   {
-    DEBUG("added %s name='%s' ordinal=%lu\n",
+    DEBUG("added %s name='%s' ordinal=%u\n",
           is_union ? "union" : "structure", name, ordinal);
     structure_holder.cache_type(ordinal, second_pass);
   }
@@ -762,7 +764,7 @@ static void add_subroutine_parameter(DieHolder *param_holder, qtype &params_type
     ok = get_numbered_type(idati, cache.ordinal, &type);
     if(!ok)
     {
-      MSG("cannot get parameter type from ordinal=%lu\n", cache.ordinal);
+      MSG("cannot get parameter type from ordinal=%u\n", cache.ordinal);
     }
   }
 
@@ -809,7 +811,7 @@ static void add_subroutine_return(DieHolder &subroutine_holder, qtype &func_type
       ok = get_numbered_type(idati, cache.ordinal, &type);
       if(!ok)
       {
-        MSG("cannot get return type from ordinal=%lu\n", cache.ordinal);
+        MSG("cannot get return type from ordinal=%u\n", cache.ordinal);
       }
       else
       {
@@ -835,7 +837,7 @@ static void process_subroutine(DieHolder &subroutine_holder)
   DieChildIterator ellipsis(subroutine_holder,
                             DW_TAG_unspecified_parameters);
   int nb_params = 0;
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
   bool second_pass = false;
   bool saved = false;
 
@@ -873,7 +875,7 @@ static void process_subroutine(DieHolder &subroutine_holder)
   }
   else
   {
-    DEBUG("added function ordinal=%lu\n", ordinal);
+    DEBUG("added function ordinal=%u\n", ordinal);
     subroutine_holder.cache_type(ordinal, second_pass);
   }
 }
@@ -921,7 +923,7 @@ void visit_type_die(DieHolder &die_holder)
 
 // find members we did not get when doing first pass
 static void second_process_structure(DieHolder &structure_holder,
-                                     ulong const ordinal)
+                                     uint32 const ordinal)
 {
   char const *type_name = get_numbered_type_name(idati, ordinal);
   tid_t struc_id = get_struc_id(type_name);
@@ -944,14 +946,14 @@ static void second_process_structure(DieHolder &structure_holder,
 
   if(third_pass)
   {
-    MSG("structure/union name='%s' ordinal=%lu needs a third pass\n", type_name, ordinal);
+    MSG("structure/union name='%s' ordinal=%u needs a third pass\n", type_name, ordinal);
     structure_holder.cache_useless();
   }
 }
 
 // find return type/parameters we did not get when doing first pass
 static void second_process_subroutine(DieHolder &subroutine_holder,
-                                      ulong const ordinal)
+                                      uint32 const ordinal)
 {
   type_t const *type = NULL;
   p_list const *fields = NULL;
@@ -961,7 +963,7 @@ static void second_process_subroutine(DieHolder &subroutine_holder,
   ok = get_numbered_type(idati, ordinal, &type, &fields);
   if(type_name == NULL || !ok)
   {
-    MSG("cannot get type from ordinal=%lu\n", ordinal);
+    MSG("cannot get type from ordinal=%u\n", ordinal);
     ok = false;
   }
   else
@@ -971,7 +973,7 @@ static void second_process_subroutine(DieHolder &subroutine_holder,
 
     if(nb_args == -1)
     {
-      MSG("cannot build function arg info ordinal=%lu\n", ordinal);
+      MSG("cannot build function arg info ordinal=%u\n", ordinal);
       ok = false;
     }
     else
@@ -1017,7 +1019,7 @@ static void second_process_subroutine(DieHolder &subroutine_holder,
 
       if(third_pass)
       {
-        MSG("function ordinal=%lu needs a third pass\n", ordinal);
+        MSG("function ordinal=%u needs a third pass\n", ordinal);
       }
 
       ok = set_numbered_type(idati, ordinal, NTF_REPLACE, type_name, func_type.c_str());
@@ -1026,7 +1028,7 @@ static void second_process_subroutine(DieHolder &subroutine_holder,
 
   if(!ok)
   {
-    MSG("failed to do function second pass ordinal=%lu\n", ordinal);
+    MSG("failed to do function second pass ordinal=%u\n", ordinal);
   }
 }
 
@@ -1068,7 +1070,7 @@ static void update_structure_member(Dwarf_Debug dbg, Dwarf_Half const tag,
       *struc_iter != NULL; ++struc_iter)
   {
     DieHolder *struc_holder = *struc_iter;
-    ulong struc_ordinal = 0;
+    uint32 struc_ordinal = 0;
     bool ok = struc_holder->get_ordinal(&struc_ordinal);
 
     if(ok)
@@ -1099,7 +1101,7 @@ static void update_structure_member(Dwarf_Debug dbg, Dwarf_Half const tag,
               if(typcmp(old_type.c_str(), member_type.c_str()) == 0)
               {
                 set_member_tinfo(idati, sptr, mptr, 0, new_type.c_str(), NULL, 0);
-                DEBUG("struct/union member changed name='%s' ordinal=%lu\n", member_name, struc_ordinal);
+                DEBUG("struct/union member changed name='%s' ordinal=%u\n", member_name, struc_ordinal);
               }
             }
           }
@@ -1151,7 +1153,7 @@ static void update_ptr_types(Dwarf_Debug dbg)
             ok = set_numbered_type(idati, cache->ordinal, NTF_REPLACE, old_name.c_str(), new_type.c_str());
             if(ok)
             {
-              DEBUG("pointer type changed ordinal=%lu\n", cache->ordinal);
+              DEBUG("pointer type changed ordinal=%u\n", cache->ordinal);
 
               // propagate the new type in the aggregate types
               update_structure_member(dbg, DW_TAG_structure_type, old_type, new_type);
@@ -1166,7 +1168,7 @@ static void update_ptr_types(Dwarf_Debug dbg)
     {
       Dwarf_Off offset = 0;
 
-      MSG("failed to update pointer type ordinal=%lu\n", cache->ordinal);
+      MSG("failed to update pointer type ordinal=%u\n", cache->ordinal);
       ok = diecache.get_type_offset(cache->ordinal, &offset);
       if(ok)
       {

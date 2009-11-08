@@ -278,7 +278,7 @@ enum_t add_dup_enum(DieHolder &enumeration_holder, char const *name,
 
 // add a struct/union even if its name already exists
 tid_t add_dup_struc(DieHolder &structure_holder, char const *name,
-                    ulong *ordinal)
+                    uint32 *ordinal)
 {
   bool const is_union = structure_holder.get_tag() == DW_TAG_union_type;
   tid_t struc_id = add_struc(BADADDR, name, is_union);
@@ -312,7 +312,7 @@ tid_t add_dup_struc(DieHolder &structure_holder, char const *name,
 
 bool apply_die_type(DieHolder &die_holder, ea_t const addr)
 {
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
   bool ok = die_holder.get_type_ordinal(&ordinal);
 
   if(!ok)
@@ -331,9 +331,9 @@ bool apply_die_type(DieHolder &die_holder, ea_t const addr)
 // check if there is a typedef with a given name and equivalent content in the db
 // equivalent content means e.g. structures, unions and enums have the same members
 // return its ordinal if the typedef is found. (0 otherwise)
-ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type_ordinal)
+uint32 get_equivalent_typedef_ordinal(DieHolder &typedef_holder, uint32 const type_ordinal)
 {
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
   char const *typedef_name = typedef_holder.get_name();
   type_t const *type = NULL;
   char const *name = NULL;
@@ -410,7 +410,7 @@ ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type
     {
       ordinal = get_type_ordinal(idati, typedef_name);
 
-      DEBUG("found equivalent typedef typedef_name='%s' name='%s' type_ordinal=%lu ordinal=%lu\n",
+      DEBUG("found equivalent typedef typedef_name='%s' name='%s' type_ordinal=%u ordinal=%u\n",
             typedef_name, name, type_ordinal, ordinal);
     }
   }

@@ -74,7 +74,7 @@ public:
     return m_struc_id;
   }
 
-  ulong get_ordinal(void) const throw()
+  uint32 get_ordinal(void) const throw()
   {
     struc_t *sptr = get_struc(m_struc_id);
 
@@ -99,10 +99,10 @@ enum_t add_dup_enum(DieHolder &enumeration_holder, char const *name,
                     flags_t flag);
 
 tid_t add_dup_struc(DieHolder &structure_holder, char const *name,
-                    ulong *ordinal);
+                    uint32 *ordinal);
 
 bool apply_die_type(DieHolder &die_holder, ea_t const addr);
 
-ulong get_equivalent_typedef_ordinal(DieHolder &typedef_holder, ulong const type_ordinal);
+uint32 get_equivalent_typedef_ordinal(DieHolder &typedef_holder, uint32 const type_ordinal);
 
 #endif // IDADWARF_TYPE_UTILS_HPP

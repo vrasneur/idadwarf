@@ -21,7 +21,7 @@ type_t const *get_ptrs_base_type(type_t const *type)
   return base_type;
 }
 
-void append_ordinal_name(qtype &type, ulong const ordinal)
+void append_ordinal_name(qtype &type, uint32 const ordinal)
 {
   type.append('#');
   append_de(&type, ordinal);
@@ -35,7 +35,7 @@ void append_complex_type(qtype &new_type, qtype const *complex_type)
   append_name(&new_type, complex_name);
 }
 
-void append_complex_type(qtype &new_type, ulong const ordinal)
+void append_complex_type(qtype &new_type, uint32 const ordinal)
 {
   qtype complex_type;
   char const *complex_name = NULL;
@@ -45,7 +45,7 @@ void append_complex_type(qtype &new_type, ulong const ordinal)
   append_name(&new_type, complex_name);
 }
 
-void make_new_type(qtype &new_type, type_t const *type, ulong const ordinal)
+void make_new_type(qtype &new_type, type_t const *type, uint32 const ordinal)
 {
   // without any type, make an 'ordinal' typedef
   if(type == NULL)
@@ -80,7 +80,7 @@ void make_new_type(qtype &new_type, type_t const *type, ulong const ordinal)
 
 // simple == no fields or C++ class infos
 // returns true => the same type with the same name already exists
-bool find_simple_type(char const *name, qtype const &ida_type, ulong *ordinal,
+bool find_simple_type(char const *name, qtype const &ida_type, uint32 *ordinal,
                       bool *found)
 {
   bool ret = false;
@@ -92,7 +92,7 @@ bool find_simple_type(char const *name, qtype const &ida_type, ulong *ordinal,
   if(name != NULL)
   {
     type_t const *type = NULL;
-    ulong existing_ordinal = 0;
+    uint32 existing_ordinal = 0;
     int ok = get_named_type(idati, name, NTF_TYPE | NTF_NOBASE, &type,
                             NULL, NULL, NULL, NULL, &existing_ordinal);
 
@@ -117,9 +117,9 @@ bool find_simple_type(char const *name, qtype const &ida_type, ulong *ordinal,
 
 // set the name and type for a (not struct/union or enum) DIE type
 // if *ordinal is not 0, do a type replace
-bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal)
+bool set_simple_die_type(char const *name, qtype const &ida_type, uint32 *ordinal)
 {
-  ulong alloced_ordinal = 0;
+  uint32 alloced_ordinal = 0;
   bool found = false;
   bool saved = find_simple_type(name, ida_type, &alloced_ordinal, &found);
   bool const replace = (*ordinal != 0);
@@ -161,7 +161,7 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal
   return saved;
 }
 
-flags_t fill_typeinfo(typeinfo_t *mt, ulong const ordinal, type_t const **type)
+flags_t fill_typeinfo(typeinfo_t *mt, uint32 const ordinal, type_t const **type)
 {
   char const *type_name = get_numbered_type_name(idati, ordinal);
   bool const ok = get_numbered_type(idati, ordinal, type);
@@ -169,7 +169,7 @@ flags_t fill_typeinfo(typeinfo_t *mt, ulong const ordinal, type_t const **type)
 
   if(type_name == NULL || !ok)
   {
-    MSG("cannot get member type from ordinal=%lu\n", ordinal);
+    MSG("cannot get member type from ordinal=%u\n", ordinal);
   }
   else
   {
@@ -229,7 +229,7 @@ bool replace_func_return(qtype &new_type, qtype const &return_type, type_t const
   return ret;
 }
 
-bool apply_type_ordinal(ea_t const addr, ulong const ordinal)
+bool apply_type_ordinal(ea_t const addr, uint32 const ordinal)
 {
   type_t const *type = NULL;
   bool ok = get_numbered_type(idati, ordinal, &type);
@@ -250,9 +250,9 @@ bool apply_type_ordinal(ea_t const addr, ulong const ordinal)
 }
 
 // get the ordinal of the type inside a typedef
-ulong get_typedef_ordinal(type_t const *typedef_type)
+uint32 get_typedef_ordinal(type_t const *typedef_type)
 {
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
   bool ok = false;
 
   if(is_type_typedef(*typedef_type))
@@ -288,7 +288,7 @@ ulong get_typedef_ordinal(type_t const *typedef_type)
 
 char const *get_typedef_name(type_t const *typedef_type)
 {
-  ulong ordinal = get_typedef_ordinal(typedef_type);
+  uint32 ordinal = get_typedef_ordinal(typedef_type);
   char const *name = NULL;
 
   if(ordinal != 0)
@@ -300,9 +300,9 @@ char const *get_typedef_name(type_t const *typedef_type)
 }
 
 // same as get_typedef_ordinal, but recursively get the ordinal
-ulong resolve_typedef_ordinal(type_t const *typedef_type)
+uint32 resolve_typedef_ordinal(type_t const *typedef_type)
 {
-  ulong ordinal = get_typedef_ordinal(typedef_type);
+  uint32 ordinal = get_typedef_ordinal(typedef_type);
 
   while(ordinal != 0)
   {
@@ -314,7 +314,7 @@ ulong resolve_typedef_ordinal(type_t const *typedef_type)
       break;
     }
 
-    ulong type_ordinal = get_typedef_ordinal(type);
+    uint32 type_ordinal = get_typedef_ordinal(type);
     if(type_ordinal == 0)
     {
       break;
@@ -326,9 +326,9 @@ ulong resolve_typedef_ordinal(type_t const *typedef_type)
   return ordinal;
 }
 
-ulong resolve_typedef_ordinal(ulong const typedef_ordinal)
+uint32 resolve_typedef_ordinal(uint32 const typedef_ordinal)
 {
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
   type_t const *typedef_type = NULL;
   bool const ok = get_numbered_type(idati, typedef_ordinal, &typedef_type);
 
@@ -342,7 +342,7 @@ ulong resolve_typedef_ordinal(ulong const typedef_ordinal)
 
 char const *resolve_typedef_name(type_t const *typedef_type)
 {
-  ulong ordinal = resolve_typedef_ordinal(typedef_type);
+  uint32 ordinal = resolve_typedef_ordinal(typedef_type);
   char const *name = NULL;
 
   if(ordinal != 0)

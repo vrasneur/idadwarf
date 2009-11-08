@@ -20,14 +20,14 @@ bool DieCache::get_cache_type(Dwarf_Off const offset, die_cache *cache) throw()
 
   if(ret && cache->type != DIE_TYPE)
   {
-    DEBUG("tried to access type from ordinal=%lu, but it is not a type!\n", cache->ordinal);
+    DEBUG("tried to access type from ordinal=%u, but it is not a type!\n", cache->ordinal);
     ret = false;
   }
 
   return ret;
 }
 
-bool DieCache::get_cache_type_ordinal(Dwarf_Off const offset, ulong *ordinal)
+bool DieCache::get_cache_type_ordinal(Dwarf_Off const offset, uint32 *ordinal)
 {
   die_cache cache;
   bool const ok = get_cache_type(offset, &cache);
@@ -48,7 +48,7 @@ bool DieCache::get_offset(sval_t const reverse, die_type const type,
   return (size != -1);
 }
 
-bool DieCache::get_cache_by_ordinal(ulong const ordinal, die_cache *cache) throw()
+bool DieCache::get_cache_by_ordinal(uint32 const ordinal, die_cache *cache) throw()
 {
   Dwarf_Off offset = 0;
   bool found = get_type_offset(ordinal, &offset);
@@ -98,7 +98,7 @@ void DieCache::cache_useful(Dwarf_Off const offset, sval_t const reverse,
        existing_cache.type != DIE_USELESS)
     {
       // should not happen
-      DEBUG("do not do cache for ordinal %lu\n", existing_cache.ordinal);
+      DEBUG("do not do cache for ordinal %u\n", existing_cache.ordinal);
     }
     else
     {
@@ -110,8 +110,8 @@ void DieCache::cache_useful(Dwarf_Off const offset, sval_t const reverse,
   }
 }
 
-void DieCache::cache_type(Dwarf_Off const offset, ulong const ordinal,
-                          bool second_pass, ulong base_ordinal) throw()
+void DieCache::cache_type(Dwarf_Off const offset, uint32 const ordinal,
+                          bool second_pass, uint32 base_ordinal) throw()
 {
   if(ordinal != 0 && ordinal != BADADDR)
   {

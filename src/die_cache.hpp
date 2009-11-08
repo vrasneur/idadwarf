@@ -26,9 +26,9 @@ struct die_cache
     // DIE_TYPE specific member
     struct
     {
-      ulong ordinal; // type ordinal
+      uint32 ordinal; // type ordinal
       bool second_pass; // cannot get the complete type
-      ulong base_ordinal; // ordinal of the type without any modifiers
+      uint32 base_ordinal; // ordinal of the type without any modifiers
     };
     // DIE_FUNC specific member
     ea_t startEA;
@@ -70,17 +70,17 @@ public:
 
   bool get_cache_type(Dwarf_Off const offset, die_cache *cache) throw();
 
-  bool get_cache_type_ordinal(Dwarf_Off const offset, ulong *ordinal);
+  bool get_cache_type_ordinal(Dwarf_Off const offset, uint32 *ordinal);
 
   bool get_offset(sval_t const reverse, die_type const type,
                   Dwarf_Off *offset) throw();
 
-  bool get_type_offset(ulong const ordinal, Dwarf_Off *offset) throw()
+  bool get_type_offset(uint32 const ordinal, Dwarf_Off *offset) throw()
   {
     return get_offset(static_cast<sval_t>(ordinal), DIE_TYPE, offset);
   }
 
-  bool get_cache_by_ordinal(ulong const ordinal, die_cache *cache) throw();
+  bool get_cache_by_ordinal(uint32 const ordinal, die_cache *cache) throw();
 
   nodeidx_t get_first_offset(void) throw()
   {
@@ -96,8 +96,8 @@ public:
 
   void cache_useless(Dwarf_Off const offset) throw();
 
-  void cache_type(Dwarf_Off const offset, ulong const ordinal,
-                  bool second_pass=false, ulong base_ordinal=0) throw();
+  void cache_type(Dwarf_Off const offset, uint32 const ordinal,
+                  bool second_pass=false, uint32 base_ordinal=0) throw();
 
   void cache_func(Dwarf_Off const offset, ea_t const startEA) throw();
 

@@ -532,7 +532,7 @@ void DieHolder::cache_useless(void)
   diecache.cache_useless(get_offset());
 }
 
-void DieHolder::cache_type(ulong const ordinal, bool second_pass, ulong base_ordinal)
+void DieHolder::cache_type(uint32 const ordinal, bool second_pass, uint32 base_ordinal)
 {
   diecache.cache_type(get_offset(), ordinal, second_pass, base_ordinal);
 }
@@ -547,7 +547,7 @@ void DieHolder::cache_var(var_type const type, ea_t const func_startEA)
   diecache.cache_var(get_offset(), type, func_startEA);
 }
 
-bool DieHolder::get_ordinal(ulong *ordinal)
+bool DieHolder::get_ordinal(uint32 *ordinal)
 {
   die_cache cache;
   bool const found = get_cache_type(&cache);
@@ -560,7 +560,7 @@ bool DieHolder::get_ordinal(ulong *ordinal)
   return found;
 }
 
-bool DieHolder::get_type_ordinal(ulong *ordinal)
+bool DieHolder::get_type_ordinal(uint32 *ordinal)
 {
   bool found = false;
 
@@ -577,7 +577,7 @@ bool DieHolder::get_type_ordinal(ulong *ordinal)
 char *DieHolder::get_type_comment(void)
 {
   char *comment = NULL;
-  ulong ordinal = 0;
+  uint32 ordinal = 0;
 
   if(get_type_ordinal(&ordinal))
   {

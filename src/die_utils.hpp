@@ -212,15 +212,15 @@ public:
 
   void cache_useless(void);
 
-  void cache_type(ulong const ordinal, bool second_pass=false, ulong base_ordinal=0);
+  void cache_type(uint32 const ordinal, bool second_pass=false, uint32 base_ordinal=0);
 
   void cache_func(ea_t const startEA);
 
   void cache_var(var_type const type, ea_t const func_startEA=BADADDR);
 
-  bool get_ordinal(ulong *ordinal);
+  bool get_ordinal(uint32 *ordinal);
 
-  bool get_type_ordinal(ulong *ordinal);
+  bool get_type_ordinal(uint32 *ordinal);
 
   char *get_type_comment(void) GCC_MALLOC;
 

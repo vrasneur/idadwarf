@@ -31,31 +31,31 @@ extern void error(char const *format, ...) GCC_PRINTF(1, 2);
 
 type_t const *get_ptrs_base_type(type_t const *type);
 
-void append_ordinal_name(qtype &type, ulong const ordinal);
+void append_ordinal_name(qtype &type, uint32 const ordinal);
 
 void append_complex_type(qtype &new_type, qtype const *complex_type);
 
-void append_complex_type(qtype &new_type, ulong const ordinal);
+void append_complex_type(qtype &new_type, uint32 const ordinal);
 
-void make_new_type(qtype &new_type, type_t const *type, ulong const ordinal);
+void make_new_type(qtype &new_type, type_t const *type, uint32 const ordinal);
 
-bool find_simple_type(char const *name, qtype const &ida_type, ulong *ordinal, bool *found);
+bool find_simple_type(char const *name, qtype const &ida_type, uint32 *ordinal, bool *found);
 
-bool set_simple_die_type(char const *name, qtype const &ida_type, ulong *ordinal);
+bool set_simple_die_type(char const *name, qtype const &ida_type, uint32 *ordinal);
 
-flags_t fill_typeinfo(typeinfo_t *mt, ulong const ordinal, type_t const **type);
+flags_t fill_typeinfo(typeinfo_t *mt, uint32 const ordinal, type_t const **type);
 
 bool replace_func_return(qtype &new_type, qtype const &return_type, type_t const *func_type);
 
-bool apply_type_ordinal(ea_t const addr, ulong const ordinal);
+bool apply_type_ordinal(ea_t const addr, uint32 const ordinal);
 
-ulong get_typedef_ordinal(type_t const *typedef_type);
+uint32 get_typedef_ordinal(type_t const *typedef_type);
 
 char const *get_typedef_name(type_t const *typedef_type);
 
-ulong resolve_typedef_ordinal(type_t const *typedef_type);
+uint32 resolve_typedef_ordinal(type_t const *typedef_type);
 
-ulong resolve_typedef_ordinal(ulong const typedef_ordinal);
+uint32 resolve_typedef_ordinal(uint32 const typedef_ordinal);
 
 char const *resolve_typedef_name(type_t const *typedef_type);
 
