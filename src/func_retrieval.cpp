@@ -866,7 +866,7 @@ static void add_callee_types(void)
         {
           if(xref.type == fl_CN || xref.type == fl_CF)
           {
-            // appears to only work when "push"ing arguments to the stack
+            // for old versions of IDA: only work when "push"ing arguments to the stack
             apply_callee_type(xref.from, func_type.c_str(), func_fields.c_str());
             // do the same thing when "mov"ing them at [esp+offset]
             my_apply_callee_type(funptr, xref.from);

@@ -1,4 +1,5 @@
 * get rid of libelf: use the ELF loader from IDA
+* add ellipsis argument (...) support in function prototypes (only supported in function pointer types for now)
 * add bitfield support
 * add C++ support
 * when C++ support is done, draw UML diagrams of the program object hierarchy via the graph API
