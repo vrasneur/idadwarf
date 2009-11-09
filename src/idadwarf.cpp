@@ -206,18 +206,20 @@ void idaapi run(GCC_UNUSED int arg)
     }
 
     retrieve_globals(cus_holder);
-#if 0
     retrieve_macros(dbg);
-#endif
 
     MSG("DWARF analysis is finished!\n");
   }
+
+  // plugin has finished its job, DIE cache is useless now
+  diecache.clean();
 }
 
 plugin_t PLUGIN =
 {
   IDP_INTERFACE_VERSION,
-  PLUGIN_UNL,             // plugin flags
+  // the plugin stays loaded because of some choose2() calls
+  PLUGIN_MOD,             // plugin flags
   init,                   // initialize
   NULL,                   // terminate. this pointer may be NULL.
   run,                    // invoke plugin

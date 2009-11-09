@@ -12,7 +12,7 @@ public:
 
   }
 
-  ~DwarfDealloc(void) throw()
+  virtual ~DwarfDealloc(void) throw()
   {
     for(size_t idx = m_deallocs.size(); idx > 0; --idx)
     {

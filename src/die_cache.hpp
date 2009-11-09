@@ -45,22 +45,24 @@ struct die_cache
 class DieCache
 {
 public:
-  DieCache(void) throw()
-    : m_dies_node("$ " PLUGIN_NAME " dies", 0, true)
+  DieCache(void)
+    : m_dies_node(new netnode("$ " PLUGIN_NAME " dies", 0, true))
   {
 
   }
 
   virtual ~DieCache(void) throw()
   {
-    m_dies_node.kill();
+    clean();
   }
+
+  void clean(void) throw();
 
   // cache predicates
 
   bool in_cache(Dwarf_Off const offset) throw()
   {
-    return (m_dies_node.supval(static_cast<sval_t>(offset), NULL,
+    return (m_dies_node->supval(static_cast<sval_t>(offset), NULL,
                                sizeof(die_cache)) != -1);
   }
 
@@ -84,12 +86,12 @@ public:
 
   nodeidx_t get_first_offset(void) throw()
   {
-    return m_dies_node.sup1st();
+    return m_dies_node->sup1st();
   }
 
   nodeidx_t get_next_offset(nodeidx_t idx) throw()
   {
-    return m_dies_node.supnxt(idx);
+    return m_dies_node->supnxt(idx);
   }
 
   // cache setters
@@ -106,7 +108,7 @@ public:
 
 private:
 // DIEs cache (ordered by offset in .debug_info)
-  netnode m_dies_node;
+  netnode *m_dies_node;
 
   void cache_useful(Dwarf_Off const offset, sval_t const reverse,
                     die_cache const *cache) throw();

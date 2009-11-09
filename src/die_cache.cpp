@@ -1,9 +1,18 @@
 #include "die_cache.hpp"
 
+void DieCache::clean(void) throw()
+{
+  if(m_dies_node != NULL)
+  {
+    m_dies_node->kill();
+    delete m_dies_node, m_dies_node = NULL;
+  }
+}
+
 bool DieCache::get_cache(Dwarf_Off const offset, die_cache *cache) throw()
 {
   bool ret = false;
-  ssize_t size = m_dies_node.supval(static_cast<sval_t>(offset), cache, sizeof(*cache));
+  ssize_t size = m_dies_node->supval(static_cast<sval_t>(offset), cache, sizeof(*cache));
 
   // found?
   if(size != -1)
@@ -43,7 +52,7 @@ bool DieCache::get_cache_type_ordinal(Dwarf_Off const offset, uint32 *ordinal)
 bool DieCache::get_offset(sval_t const reverse, die_type const type,
                           Dwarf_Off *offset) throw()
 {
-  ssize_t const size = m_dies_node.supval(reverse, offset, sizeof(*offset), type);
+  ssize_t const size = m_dies_node->supval(reverse, offset, sizeof(*offset), type);
 
   return (size != -1);
 }
@@ -67,7 +76,7 @@ void DieCache::cache_useless(Dwarf_Off const offset) throw()
   {
     die_cache cache = { DIE_USELESS, { 0 } };
 
-    m_dies_node.supset(static_cast<sval_t>(offset), &cache, sizeof(cache));
+    m_dies_node->supset(static_cast<sval_t>(offset), &cache, sizeof(cache));
   }
 }
 
@@ -88,7 +97,7 @@ void DieCache::cache_useful(Dwarf_Off const offset, sval_t const reverse,
 
       // set the same cache infos
       // but don't touch the existing reverse mapping!
-      m_dies_node.supset(offset_idx, &existing_cache, sizeof(existing_cache));
+      m_dies_node->supset(offset_idx, &existing_cache, sizeof(existing_cache));
     }
   }
   else
@@ -104,8 +113,8 @@ void DieCache::cache_useful(Dwarf_Off const offset, sval_t const reverse,
     {
       nodeidx_t const offset_idx = static_cast<nodeidx_t>(offset);
 
-      m_dies_node.supset(offset_idx, cache, sizeof(*cache));
-      m_dies_node.altset(reverse, offset_idx, cache->type);
+      m_dies_node->supset(offset_idx, cache, sizeof(*cache));
+      m_dies_node->altset(reverse, offset_idx, cache->type);
     }
   }
 }

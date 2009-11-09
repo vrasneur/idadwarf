@@ -2,75 +2,132 @@
 
 // IDA headers
 #include <ida.hpp>
-#include <enum.hpp>
+#include <kernwin.hpp>
 
 // local headers
 #include "ida_utils.hpp"
-// number conversion utils
-#include "utils.hpp"
 
-void retrieve_macros(Dwarf_Debug dbg)
+typedef struct
 {
-  // create an anonymous enum to store the macros' integer constants
-  // TODO: looks like we put too much data inside this enum...
-  enum_t enum_id = add_enum(BADADDR, NULL, 0);
+  char *macro;
+  size_t name_len;
+} macro_details;
 
-  if(enum_id == BADNODE)
+class MacroInfos: public qvector<macro_details *>
+{
+public:
+  virtual ~MacroInfos(void) throw()
   {
-    MSG("cannot create an enum to store constants from macros\n");
+    clean();
+  }
+
+private:
+  void clean(void) throw()
+  {
+    for(size_t idx = 0; idx < size(); ++idx)
+    {
+      macro_details *details = (*this)[idx];
+
+      if(details != NULL)
+      {
+        delete details->macro, details->macro = NULL;
+        delete details;
+        (*this)[idx] = NULL;
+      }
+    }
+  }
+};
+
+int const macro_widths[2] = { 24, 32 };
+char const * const macro_headers[2] = { "Name", "Value" };
+char const macro_title[] = "Macros";
+
+uint32 idaapi get_nb_macros(void *obj)
+{
+  MacroInfos *macros = static_cast<MacroInfos *>(obj);
+
+  return macros->size();
+}
+
+static void idaapi get_macro(void *obj, uint32 n, char * const *cells)
+{
+  MacroInfos *macros = static_cast<MacroInfos *>(obj);
+
+  if(n == 0)
+  {
+    qstrncpy(cells[0], macro_headers[0], macro_widths[0]);
+    qstrncpy(cells[1], macro_headers[1], macro_widths[1]);
   }
   else
   {
-    Dwarf_Off offset = 0;
-    Dwarf_Unsigned max = 0;
-    Dwarf_Signed count = 0;
-    Dwarf_Macro_Details *maclist = NULL;
-    Dwarf_Error err = NULL;
-    int ret = DW_DLV_ERROR;
+    macro_details const *details = (*macros)[n - 1];
+    char const *macro = details->macro;
+    size_t const name_len = details->name_len;
 
-    while((ret = dwarf_get_macro_details(dbg, offset, max, &count,
-                                         &maclist, &err)) == DW_DLV_OK)
+    if(macro != NULL)
     {
-      for(Dwarf_Signed idx = 0; idx < count; ++idx)
+      qstrncpy(cells[0], macro, name_len);
+      qstrncpy(cells[1], macro + name_len, MAXSTR);
+    }
+  }
+}
+
+static void idaapi destroy_macros(void *obj)
+{
+  MacroInfos *macros = static_cast<MacroInfos *>(obj);
+
+  delete macros;
+}
+
+void retrieve_macros(Dwarf_Debug dbg)
+{
+  Dwarf_Off offset = 0;
+  Dwarf_Unsigned max = 0;
+  Dwarf_Signed count = 0;
+  Dwarf_Macro_Details *maclist = NULL;
+  MacroInfos *macros = new MacroInfos;
+  Dwarf_Error err = NULL;
+  int ret = DW_DLV_ERROR;
+
+  while((ret = dwarf_get_macro_details(dbg, offset, max, &count,
+                                       &maclist, &err)) == DW_DLV_OK)
+  {
+    for(Dwarf_Signed idx = 0; idx < count; ++idx)
+    {      
+      struct Dwarf_Macro_Details_s const *dmd = &maclist[idx];
+
+      if(dmd->dmd_type == DW_MACINFO_define)
       {
-        struct Dwarf_Macro_Details_s *dmd = &maclist[idx];
+        char *macro = dmd->dmd_macro;
 
-        if(dmd->dmd_type == DW_MACINFO_define)
+        if(macro != NULL)
         {
-          long val = 0;
-          char *macro = dmd->dmd_macro;
           char *value_start = dwarf_find_macro_value_start(macro);
-          int res = my_strict_strtol(value_start, &val);
 
-          // TODO: check if it is a function-like macro
-          // TODO: a strdup might be better?
-          value_start[-1] = '\0';
-          if(res == 0)
+          if(value_start != NULL)
           {
-            add_const(enum_id, macro, static_cast<uval_t>(val));
-          }
-          else
-          {
-            // number conversion failed
-            // maybe the value was another macro name
-            const_t const_id = get_const_by_name(value_start);
+            macro_details *details = new macro_details;
+            size_t const name_len = static_cast<size_t>(value_start - macro);
 
-            if(const_id != BADADDR && get_const_enum(const_id) == enum_id)
-            {
-              add_const(enum_id, value_start, get_const_value(const_id));
-            }
+            details->macro = qstrdup(macro);
+            details->name_len = (name_len < MAXSTR) ? name_len : MAXSTR;
+            macros->push_back(details);
           }
         }
       }
 
       offset = maclist[count - 1].dmd_offset + 1;
-      dwarf_dealloc(dbg, maclist, DW_DLA_STRING);
     }
 
-    if(ret == DW_DLV_ERROR)
-    {
-      MSG("error getting macro details: %s\n", dwarf_errmsg(err));
-    }
+    dwarf_dealloc(dbg, maclist, DW_DLA_STRING);
   }
-}
 
+  if(ret == DW_DLV_ERROR)
+  {
+    MSG("error getting macro details: %s\n", dwarf_errmsg(err));
+  }
+
+  choose2(false, -1, -1, -1, -1, macros,
+          2, macro_widths, get_nb_macros, get_macro, "Macros", -1, 1,
+          NULL, NULL, NULL, NULL, NULL, destroy_macros);
+}
