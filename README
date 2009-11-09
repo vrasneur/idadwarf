@@ -11,6 +11,7 @@ How to use it?
 --------------
 
 Just copy the 'idadwarf.plw' file to the IDA plugins directory.
+This file has been compiled with the IDA 5.5 SDK.
 When loading an ELF file, there should be a new "IDADWARF ELF vX.X" entry
 in the "Edit/plugins" menu.
 
@@ -79,7 +80,7 @@ What can I find in the tarball?
 * INSTALL : informations to build the plugin from source
 * CODING_STYLE : C++ coding style for the plugin
 * TODO: things to be done later :)
-* bin/ : contains the IDADWARF DLL
+* bin/ : contains the IDADWARF DLL, compiled for IDA Pro 5.5
 * src/ : contains the source files
 * tests/ : contains test files, type 'make' to build them
 * tests/bin/ : contains test binaries
