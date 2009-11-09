@@ -1,4 +1,5 @@
 DBGFLAGS := -O0 -ggdb3
+CFLAGS := -m32 $(DBGFLAGS)
 
 BIN := testfpo testnotfpo teststripdbg test2
 
@@ -8,11 +9,11 @@ all: $(BIN)
 
 # with frame pointer omission
 testfpo: test.c
-	gcc $(DBGFLAGS) -fomit-frame-pointer $^ -o $@
+	gcc $(CFLAGS) -fomit-frame-pointer $^ -o $@
 
 # normal
 testnotfpo: test.c
-	gcc $(DBGFLAGS) $^ -o $@
+	gcc $(CFLAGS) $^ -o $@
 
 # debug symbols in another file
 teststripdbg: testnotfpo
@@ -22,7 +23,7 @@ teststripdbg: testnotfpo
 
 # normal, with enums and structs
 test2: test2.c
-	gcc $(DBGFLAGS) $^ -o $@
+	gcc $(CFLAGS) $^ -o $@
 
 clean:
 	-rm -f $(BIN) *.dbg
