@@ -152,7 +152,7 @@ static void load_separate_dwarf_file(CUsHolder &cus_holder)
 
 // plugin callbacks
 
-int idaapi init(void)
+static int idaapi init(void)
 {
   int ret = PLUGIN_SKIP;
 
@@ -171,7 +171,7 @@ int idaapi init(void)
   return ret;
 }
 
-void idaapi run(GCC_UNUSED int arg)
+static void idaapi run(GCC_UNUSED int arg)
 {
   Dwarf_Debug dbg = NULL;
   char elf_path[QMAXPATH];
