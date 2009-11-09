@@ -9,7 +9,7 @@ That means:
 * MinGW acts as a cross-compiler
 * IDA (and IDADWARF) runs via Wine.
 
-Don't be afraid, the plugin should also run natively on Windows.
+Don't be afraid, the plugin runs natively on Windows too.
 
 IDADWARF has some dependencies:
 * MinGW: installed as a cross-compiler on a Linux host.
