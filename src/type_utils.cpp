@@ -94,7 +94,7 @@ bool EnumCmp::equal(DieHolder &enumeration_holder)
   return ret;
 }
 
-int EnumCmp::visit_const(const_t cid, uval_t value) throw()
+int idaapi EnumCmp::visit_const(const_t cid, uval_t value) throw()
 {
   int ret = 1;
   // '\0' character is included in len

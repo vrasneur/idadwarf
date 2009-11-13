@@ -50,7 +50,7 @@ private:
   EnumCmp(EnumCmp const &);
   EnumCmp & operator= (EnumCmp const &);
 
-  virtual int visit_const(const_t cid, uval_t value) throw();
+  virtual int idaapi visit_const(const_t cid, uval_t value) throw();
 
   bool find(char const *name, uval_t const value);
 };

@@ -27,6 +27,7 @@ To compile the plugin, follow these steps:
   the following variables need to be adapted to your configuration:
   + CC (the MinGW C++ cross-compiler)
   + RANLIB (the MinGW ranlib)
+  + AUTOCONF (the autoconf script)
   + ELFDIR (the libelf source path)
   + DWARFDIR (the libdwarf source path)
   + IDAINC (include directory in the IDA SDK)

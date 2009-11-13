@@ -3,9 +3,7 @@
 // IDA headers
 #include <ida.hpp>
 #include <nalt.hpp>
-
 #include <typeinf.hpp>
-//#undef BTMT_SPECFLT
 #include <enum.hpp>
 #include <struct.hpp>
 
@@ -111,7 +109,7 @@ static void process_base_type(DieHolder &type_holder)
       ida_type[0] |= BTMT_BOOL4;
       break;
     default:
-      msg("base type: unknown boolean size=%" DW_PR_DUu ", assuming size is model specific\n", byte_size);
+      MSG("base type: unknown boolean size=%" DW_PR_DUu ", assuming size is model specific\n", byte_size);
       ida_type[0] |= BTMT_DEFBOOL;
       break;
     }
@@ -136,7 +134,7 @@ static void process_base_type(DieHolder &type_holder)
       ida_type[0] |= BTMT_LNGDBL;
       break;
     default:
-      msg("unknown float byte size=%" DW_PR_DUu "\n", byte_size);
+      MSG("unknown float byte size=%" DW_PR_DUu "\n", byte_size);
       break;
     }
     break;
@@ -166,7 +164,7 @@ static void process_base_type(DieHolder &type_holder)
       ida_type[0] |= BT_INT128;
       break;
     default:
-      msg("unknown byte size=%" DW_PR_DUu ", assuming natural int\n", byte_size);
+      MSG("unknown byte size=%" DW_PR_DUu ", assuming natural int\n", byte_size);
       ida_type[0] |= BT_INT;
       break;
     }
@@ -182,11 +180,11 @@ static void process_base_type(DieHolder &type_holder)
     ida_type[0] |= BT_INT8 | BTMT_CHAR;
     if(byte_size != 1)
     {
-      msg("got a char with bte size=%" DW_PR_DUu " (!= 1), assuming 1 anyway...\n", byte_size);
+      MSG("got a char with bte size=%" DW_PR_DUu " (!= 1), assuming 1 anyway...\n", byte_size);
     }
     break;
   default:
-    msg("unknown base type encoding %" DW_PR_DSd "\n", encoding);
+    MSG("unknown base type encoding %" DW_PR_DSd "\n", encoding);
     break;
   }
 
@@ -196,7 +194,7 @@ static void process_base_type(DieHolder &type_holder)
     saved = set_simple_die_type(name, ida_type, &ordinal);
     if(!saved)
     {
-      msg("failed to save base type name='%s' ordinal=%u\n", name, ordinal);
+      MSG("failed to save base type name='%s' ordinal=%u\n", name, ordinal);
     }
     else
     {
