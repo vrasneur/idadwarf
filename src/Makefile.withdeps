@@ -1,13 +1,8 @@
+# -*- makefile -*-
+# use this Makefile if you want to build with prepackaged libelf and libdwarf
+
 # mingw C++ (cross-)compiler
 CC := i586-mingw32msvc-g++
-# ranlib
-RANLIB := i586-mingw32msvc-ranlib
-# autoconf
-AUTOCONF := autoconf2.50
-# libelf source path
-ELFDIR := /home/vincent/prog/idadwarf/archives/libelf-0.8.13
-# libdwarf source path
-DWARFDIR := /home/vincent/prog/idadwarf/archives/dwarf-20091012/libdwarf
 # include path for IDA sdk
 IDAINC := /home/vincent/sources/idasdk55/include
 # ida.a library path
@@ -16,8 +11,7 @@ IDALIB := /home/vincent/sources/idasdk55/libgcc.w32/ida.a
 # IDA path
 IDADIR := /home/vincent/.wine/drive_c/Program\ Files/IDA
 # libelf and libdwarf prefix paths
-# you can keep the default value
-DEPSDIR := deps
+DEPSDIR := ../deps
 # include paths for IDA sdk, libelf and libdwarf
 # you can keep the default value
 INCLUDES := $(IDAINC) $(DEPSDIR)/include
@@ -52,41 +46,16 @@ CFLAGS += -DNDEBUG
 endif
 
 LIBS := -Wl,--dll -shared -mno-cygwin
-MACHINE := $(strip $(shell $(CC) -dumpmachine))
 BIN := idadwarf.plw
 STEMS := ida_utils registers die_cache die_utils iterators type_utils type_retrieval func_retrieval global_retrieval macro_retrieval idadwarf
 OBJS := $(addsuffix .o,$(STEMS))
 
-$(shell mkdir -p $(ABSDEPSDIR))
+.PHONY: clean distclean dist install test 
 
-.PHONY: clean cleandeps distclean dist install test 
-
-all: $(LIBELF) $(LIBDWARF) $(BIN)
-
-$(ELFDIR):
-	$(call check,isdir,$(ELFDIR),libelf source path not found)
-
-$(DWARFDIR):
-	$(call check,isdir,$(DWARFDIR),libdwarf source path not found)
+all: $(BIN)
 
 $(IDADIR):
 	$(call check,isdir,$(IDADIR),IDA path not found)
-
-define compdep
-(cd $< && $(1) && \
-CC="$(MACHINE)-gcc" $(2) ./configure --prefix="$(ABSDEPSDIR)" \
---host="$(MACHINE)" --disable-shared $(3) && make $(4) && \
-$(RANLIB) $(ABSDEPSDIR)/lib/$(5))
-endef
-
-$(LIBELF): $(ELFDIR)
-	$(call compdep,:,,\
-	--disable-nls --enable-compat --enable-elf64,all install,libelf.a)
-
-$(LIBDWARF): $(DWARFDIR)
-	$(call compdep,patch -N -p1 < $(CURDIR)/patch/libdwarf.patch && $(AUTOCONF),\
-	CPPFLAGS="-I$(ABSDEPSDIR)/include" LDFLAGS="-L$(ABSDEPSDIR)/lib",\
-	--enable-nonshared,libdwarf.a install,libdwarf.a)
 
 $(OBJS): %.o: %.cpp
 	$(CC) $(CFLAGS) -c $< $(addprefix -I,$(INCLUDES))
@@ -103,15 +72,7 @@ test: install
 dist: $(BIN)
 	cp $< $(DISTDIR)
 
-distclean: clean cleandeps
+distclean: clean
 
 clean:
 	-rm -f $(BIN) $(OBJS) *.gch *~
-
-cleandeps:
-	-$(call test,isfile,$(ELFDIR)/Makefile,make -C $(ELFDIR) distclean)
-	-$(call test,isfile,$(DWARFDIR)/Makefile,make -C $(DWARFDIR) distclean)
-	-rm -rf $(ABSDEPSDIR)/include $(ABSDEPSDIR)/lib
-
-copydeps:
-	-cp -r $(DEPSDIR) ..

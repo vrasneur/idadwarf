@@ -1,18 +1,30 @@
 How to compile IDADWARF?
 ------------------------
 
-IDADWARF is an IDA plugin for Windows, but you must compile it on a Linux system.
+IDADWARF is an IDA plugin for Windows, but you must compile it on a Linux system, or with MinGW/MSYS on Windows.
 
 Why? Because I developed the plugin on a Linux-based netbook.
 
-That means:
+On linux, that means:
 * MinGW acts as a cross-compiler
 * IDA (and IDADWARF) runs via Wine.
-
 Don't be afraid, the plugin runs natively on Windows too.
 
-IDADWARF has some dependencies:
-* MinGW: installed as a cross-compiler on a Linux host.
+On Windows, that means:
+* MSYS DTK/Core provides the UNIX utilities (autoconf, patch, ...)
+* MinGW provides the g++ compiler (and make)
+For further help, see:
+* http://www.mingw.org/wiki/HOWTO_Install_the_MinGW_GCC_Compiler_Suite
+* http://www.mingw.org/wiki/MSYS
+
+There are 2 possible ways to build IDADWARF: with or without building its dependencies.
+
+It will build with the IDA SDK, preferably version 5.5 (but anterior 5.x versions should work)
+
+I) With source dependencies:
+
+IDADWARF has some dependencies you need to download:
+* MinGW: installed as a cross-compiler on a Linux host or as is on Windows.
   http://www.mingw.org
 * libelf: the GNU one, preferably version 0.8.13
   http://www.mr511.de/software/
@@ -20,12 +32,11 @@ IDADWARF has some dependencies:
   http://reality.sgiweb.org/davea/dwarf.html
 * the 'autoconf' program from the autotools
   http://www.gnu.org/software/autoconf/
-* the IDA SDK, preferably version 5.5 (but anterior 5.x versions should work)
 
 To compile the plugin, follow these steps:
 * edit the src/Makefile file
   the following variables need to be adapted to your configuration:
-  + CC (the MinGW C++ cross-compiler)
+  + CC (the MinGW C++ (cross-)compiler)
   + RANLIB (the MinGW ranlib)
   + AUTOCONF (the autoconf script)
   + ELFDIR (the libelf source path)
@@ -49,3 +60,27 @@ To compile the plugin, follow these steps:
   make test
 * clean all you have done
   make distclean
+
+II) With prepackaged dependencies:
+
+* edit the src/Makefile.withdeps file
+  the following variables need to be adapted to your configuration:
+  + CC (the MinGW C++ (cross-)compiler)
+  + IDAINC (include directory in the IDA SDK)
+  + IDALIB (the IDA static library for GCC)
+  + IDADIR (directory where the idag.exe binary is)
+* build the plugin, in the src/ directory:
+  make -f Makefile.withdeps
+  (the resulting plugin is named idadwarf.plw.)
+* or if you want a debug build, type:
+  DEBUG=1 make -f Makefile.withdeps
+  (the only change in a debug build is that lots of debug
+   messages are printed to the IDA messages window.)
+* copy the plugin to the IDA plugin directory:
+  make -f Makefile.withdeps install
+* or copy the plugin in the bin/ directory:
+  make -f Makefile.withdeps dist
+* test if all is working correctly:
+  make -f Makefile.withdeps test
+* clean all you have done
+  make -f Makefile.withdeps distclean
