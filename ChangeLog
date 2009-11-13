@@ -1,0 +1,8 @@
+IDADWARF 0.1.1 (13 Nov 2009)
+
+	* calling convention fix in EnumCmp::visit_const (thanks to Igor Skochinsky).
+	* can build with prepackaged dependencies.
+
+IDADWARF 0.1 (10 Nov 2009)
+
+	* initial release.
