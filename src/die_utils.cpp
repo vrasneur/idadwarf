@@ -356,7 +356,8 @@ void DieHolder::get_frame_base_offsets(OffsetAreas &offset_areas)
 }
 
 void DieHolder::retrieve_var(func_t *funptr, ea_t const cu_low_pc,
-                             OffsetAreas const &offset_areas, var_visitor_fun visit)
+                             OffsetAreas const &offset_areas, func_type_info_t *info,
+                             var_visitor_fun visit)
 {
   Dwarf_Attribute attrib = get_attr(DW_AT_location);
 
@@ -367,6 +368,7 @@ void DieHolder::retrieve_var(func_t *funptr, ea_t const cu_low_pc,
     Dwarf_Signed count = 0;
     Dwarf_Error err = NULL;
     DwarfDealloc dealloc(m_dbg);
+    size_t const nb_args = (info == NULL) ? 0 : info->size();
 
     CHECK_DWERR(dwarf_loclist_n(attrib, &llbuf, &count, &err), err,
                 "cannot get location descriptions");
@@ -379,7 +381,13 @@ void DieHolder::retrieve_var(func_t *funptr, ea_t const cu_low_pc,
       dealloc.add(llbuf[idx], DW_DLA_LOCDESC);
       dealloc.add(llbuf[idx]->ld_s, DW_DLA_LOC_BLOCK);
 
-      visit(*this, locdesc, funptr, cu_low_pc, offset_areas);
+      visit(*this, locdesc, funptr, cu_low_pc, offset_areas, info);
+
+      if(info != NULL && info->size() != nb_args)
+      {
+        // parameter has already been added, do not add it twice!
+        info = NULL;
+      }
     }
   }
 }

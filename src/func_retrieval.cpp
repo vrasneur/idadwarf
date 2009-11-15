@@ -53,6 +53,31 @@ static var_type get_var_type(Dwarf_Small const atom)
   return type;
 }
 
+static void add_func_parameter(DieHolder &var_holder, argloc_t const argloc,
+                               func_type_info_t *info)
+{
+  uint32 ordinal = 0;
+
+  if(var_holder.get_type_ordinal(&ordinal))
+  {
+    type_t const *type = NULL;
+    p_list const *fields = NULL;
+    bool const found = get_numbered_type(idati, ordinal, &type, &fields);
+
+    if(found)
+    {
+      funcarg_info_t arg_info;
+
+      arg_info.argloc = argloc;
+      arg_info.name = var_holder.get_name();
+      arg_info.type = type;
+      arg_info.fields = fields;
+
+      info->push_back(arg_info);
+    }
+  }
+}
+
 // transform operand [var+offset] into [var+struct.member] if var is a pointer to a struct/union
 static void set_register_var_strpath(ea_t const current_addr, char const *reg_name,
                                      struc_t *sptr)
@@ -235,7 +260,8 @@ static void set_register_var_operand_type(DieHolder &var_holder, char const *reg
 }
 
 static bool process_register_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
-                                 func_t *funptr, ea_t const cu_low_pc)
+                                 func_t *funptr, ea_t const cu_low_pc,
+                                 func_type_info_t *info)
 {
   char const *var_name = var_holder.get_name();
   Dwarf_Loc const *loc = &locdesc->ld_s[0];
@@ -253,6 +279,16 @@ static bool process_register_var(DieHolder &var_holder, Dwarf_Locdesc const *loc
       ea_t const endEA = locdesc->ld_hipc + cu_low_pc;
       int const ret = add_regvar(funptr, startEA, endEA,
                                  reg_name, var_name, comment);
+
+      if(info != NULL && funptr->startEA == startEA)
+      {
+        metapc_reg nb = regnames.get_nb_from_atom(loc->lr_atom);
+
+        if(nb != R_error)
+        {
+          add_func_parameter(var_holder, make_argloc(nb, -1), info);
+        }
+      }
 
       if(comment != NULL)
       {
@@ -393,7 +429,8 @@ static bool set_stack_var(DieHolder &var_holder, func_t *funptr, sval_t const of
 }
 
 static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
-                              func_t *funptr, OffsetAreas const &offset_areas)
+                              func_t *funptr, OffsetAreas const &offset_areas,
+                              func_type_info_t *info)
 {
   char const *var_name = var_holder.get_name();
   Dwarf_Loc const *loc = &locdesc->ld_s[0];
@@ -412,7 +449,8 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
       // ebp based location?
       if(loc->lr_atom == DW_OP_breg5)
       {
-        offset = loc->lr_number;
+        // add offset and fpd (offset is from the real ebp, not the typical)
+        offset = loc->lr_number - funptr->fpd;
         found = true;
       }
       // esp based location?
@@ -459,7 +497,7 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
           if(offset_area.contains(area))
           {
             offset = (offset_area.offset + loc->lr_number +
-                      (offset_area.use_fp ? 0 : offset_areas.get_base()));
+                      (offset_area.use_fp ? -funptr->fpd : offset_areas.get_base()));
             DEBUG("found a stack frame var in a location list name='%s' offset=%ld\n", var_name, offset);
             found = true;
             break;
@@ -472,6 +510,11 @@ static bool process_stack_var(DieHolder &var_holder, Dwarf_Locdesc const *locdes
         // we got the variable offset in the stack
         // get its type and add it to the stack frame
         ok = set_stack_var(var_holder, funptr, offset);
+
+        if(info != NULL)
+        {
+          add_func_parameter(var_holder, offset, info);
+        }
       }
     }
   }
@@ -502,7 +545,7 @@ static bool process_func_static_var(DieHolder &var_holder, Dwarf_Locdesc const *
 
 static void visit_func_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
                            func_t *funptr, ea_t const cu_low_pc,
-                           OffsetAreas const &offset_areas)
+                           OffsetAreas const &offset_areas, func_type_info_t *info)
 {
   char const *var_name = var_holder.get_name();
   var_type type = VAR_USELESS;
@@ -518,11 +561,11 @@ static void visit_func_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
     {
     case VAR_REGISTER:
       // variable stored in a register?
-      ok = process_register_var(var_holder, locdesc, funptr, cu_low_pc);
+      ok = process_register_var(var_holder, locdesc, funptr, cu_low_pc, info);
       break;
     case VAR_STACK:
       // stored in the stack frame?
-      ok = process_stack_var(var_holder, locdesc, funptr, offset_areas);
+      ok = process_stack_var(var_holder, locdesc, funptr, offset_areas, info);
       break;
     case VAR_FUNC_STATIC:
       // static variable local to a function?
@@ -544,7 +587,8 @@ static void visit_func_var(DieHolder &var_holder, Dwarf_Locdesc const *locdesc,
 }
 
 static void process_func_vars(DieHolder &locals_holder, func_t *funptr,
-                              ea_t const cu_low_pc, OffsetAreas const &offset_areas)
+                              ea_t const cu_low_pc, OffsetAreas const &offset_areas,
+                              func_type_info_t *info)
 {
   for(DieChildIterator iter(locals_holder, DW_TAG_formal_parameter);
       *iter != NULL; ++iter)
@@ -552,7 +596,7 @@ static void process_func_vars(DieHolder &locals_holder, func_t *funptr,
     DieHolder *param_holder = *iter;
 
     param_holder->enable_abstract_origin();
-    param_holder->retrieve_var(funptr, cu_low_pc, offset_areas,
+    param_holder->retrieve_var(funptr, cu_low_pc, offset_areas, info,
                                visit_func_var);
   }
 
@@ -562,7 +606,7 @@ static void process_func_vars(DieHolder &locals_holder, func_t *funptr,
     DieHolder *var_holder = *iter;
 
     var_holder->enable_abstract_origin();
-    var_holder->retrieve_var(funptr, cu_low_pc, offset_areas,
+    var_holder->retrieve_var(funptr, cu_low_pc, offset_areas, NULL,
                              visit_func_var);
   }
 
@@ -571,7 +615,7 @@ static void process_func_vars(DieHolder &locals_holder, func_t *funptr,
   {
     DieHolder *subroutine_holder = *iter;
 
-    process_func_vars(*subroutine_holder, funptr, cu_low_pc, offset_areas);
+    process_func_vars(*subroutine_holder, funptr, cu_low_pc, offset_areas, NULL);
   }
 
   for(DieChildIterator iter(locals_holder, DW_TAG_lexical_block);
@@ -579,11 +623,32 @@ static void process_func_vars(DieHolder &locals_holder, func_t *funptr,
   {
     DieHolder *block_holder = *iter;
 
-    process_func_vars(*block_holder, funptr, cu_low_pc, offset_areas);
+    process_func_vars(*block_holder, funptr, cu_low_pc, offset_areas, NULL);
   }
 }
 
-static bool add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
+// edge case of the x86 ABI: struct/union as return values
+static bool handle_struni_return(qtype const &return_type, func_type_info_t &info)
+{
+  bool ok = false;
+
+  if(is_type_struni_rec(return_type.c_str()))
+  {
+    // copied from the new PDB plugin
+    funcarg_info_t retinfo;
+
+    info.rettype = return_type;
+    info.rettype.insert(0, BT_PTR);
+    retinfo.type = info.rettype;
+    retinfo.name = "result";
+    info.insert(info.begin(), retinfo);
+    ok = true;
+  }
+
+  return ok;
+}
+
+static bool finish_subprogram(DieHolder &subprogram_holder, func_t *funptr, func_type_info_t &info)
 {
   bool ok = false;
   // correct return type
@@ -620,25 +685,68 @@ static bool add_subprogram_return(DieHolder &subprogram_holder, func_t *funptr)
   // correct return type has been filled?
   if(ok)
   {
-    // old function type/fields
     qtype func_type;
     qtype func_fields;
-    // function type with correct return type
-    qtype new_type;
+    DieChildIterator ellipsis(subprogram_holder,
+                              DW_TAG_unspecified_parameters);
     int const ret = guess_func_tinfo(funptr, &func_type, &func_fields);
-
+ 
     ok = (ret != GUESS_FUNC_FAILED);
+
     if(ok)
     {
-      ok = replace_func_return(new_type, return_type, func_type.c_str());
-      if(!ok)
+      func_type_info_t old_info;
+      int const nb_args = build_funcarg_info(idati, func_type.c_str(), func_fields.c_str(), &old_info, 0);
+
+      ok = (nb_args != -1);
+
+      if(ok)
       {
-        MSG("failed to set the return type for function name='%s'\n", subprogram_holder.get_name());
+        qtype new_type;
+        qtype new_fields;
+
+        if(static_cast<size_t>(nb_args) < info.size())
+        {
+          info.rettype = return_type;
+          info.retloc = 0;
+
+          if(!handle_struni_return(return_type, info) && return_type[0] != BTF_VOID)
+          {
+            // TODO: works for AL, ... too?
+            info.retloc = make_argloc(0, -1);
+          }
+
+          info.cc = (*ellipsis != NULL) ? CM_CC_SPECIALE : CM_CC_SPECIAL;
+
+          ok = build_func_type(&new_type, &new_fields, info);
+        }
+        else
+        {
+          old_info.rettype = return_type;
+          old_info.cc = (*ellipsis != NULL) ? CM_CC_ELLIPSIS : old_info.cc;
+
+          handle_struni_return(return_type, old_info);
+
+          // IDA adds a useless param instead of the ellipsis (...)
+          if(*ellipsis != NULL && static_cast<size_t>(nb_args) == info.size() + 1)
+          {
+            old_info.pop_back();
+          }
+
+          ok = build_func_type(&new_type, &new_fields, old_info);
+        }
+
+        if(ok)
+        {
+          func_type = new_type;
+          func_fields = new_fields;
+        }
       }
-      else
-      {
-        ok = apply_tinfo(idati, funptr->startEA, new_type.c_str(), func_fields.c_str(), 0);
-      }
+    }
+
+    if(ok)
+    {
+      ok = apply_tinfo(idati, funptr->startEA, func_type.c_str(), func_fields.c_str(), 0);
     }
   }
 
@@ -664,6 +772,7 @@ static void process_subprogram(DieHolder &subprogram_holder)
                           subprogram_holder.get_CU_offset());
       ea_t const cu_low_pc = static_cast<ea_t>(cu_holder.get_addr_from_attr(DW_AT_low_pc));
       OffsetAreas offset_areas;
+      func_type_info_t info;
       Dwarf_Bool const is_external = subprogram_holder.get_attr_flag(DW_AT_external);
 
       if(is_external)
@@ -691,10 +800,10 @@ static void process_subprogram(DieHolder &subprogram_holder)
 
       subprogram_holder.get_frame_base_offsets(offset_areas);
 
-      process_func_vars(subprogram_holder, funptr, cu_low_pc, offset_areas);
+      process_func_vars(subprogram_holder, funptr, cu_low_pc, offset_areas, &info);
 
-      // set the function return type
-      ok = add_subprogram_return(subprogram_holder, funptr);
+      // add return type and apply register parameters
+      ok = finish_subprogram(subprogram_holder, funptr, info);
       if(ok)
       {
         DEBUG("added function name='%s' offset=%u\n",

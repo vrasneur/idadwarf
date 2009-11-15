@@ -194,41 +194,6 @@ flags_t fill_typeinfo(typeinfo_t *mt, uint32 const ordinal, type_t const **type)
   return flags;
 }
 
-bool replace_func_return(qtype &new_type, qtype const &return_type, type_t const *func_type)
-{
-  type_t const *tmp_ptr = NULL;
-  bool ret = false;
-
-  new_type.append(*func_type); // append BT_FUNC
-  func_type++;
-  new_type.append(*func_type); // append calling convention and memory model
-  func_type++;
-  // TODO: not sure about that step
-  tmp_ptr = skip_spoiled_info(func_type);
-  // type not ending prematurely?
-  if(tmp_ptr != NULL)
-  {
-    // need to append spoiled info?
-    if(tmp_ptr != func_type)
-    {
-      new_type.append(func_type, static_cast<size_t>(tmp_ptr - func_type));
-      func_type = tmp_ptr;
-    }
-    // append new return type
-    new_type.append(return_type);
-    // skip old return type
-    tmp_ptr = skip_type(idati, func_type);
-    if(tmp_ptr != NULL && *func_type != '\0')
-    {
-      // skip action has succeeded, append the old arguments
-      new_type.append(func_type);
-      ret = true;
-    }
-  }
-
-  return ret;
-}
-
 bool apply_type_ordinal(ea_t const addr, uint32 const ordinal)
 {
   type_t const *type = NULL;
@@ -351,4 +316,23 @@ char const *resolve_typedef_name(type_t const *typedef_type)
   }
 
   return name;
+}
+
+// same as is_type_strui, but resolve typedefs recursively
+bool is_type_struni_rec(type_t const *type)
+{
+  uint32 ordinal = resolve_typedef_ordinal(type);
+  bool ok = true;
+
+  if(ordinal != 0)
+  {
+    ok = get_numbered_type(idati, ordinal, &type);
+  }
+
+  if(ok)
+  {
+    ok = is_type_struni(*type);
+  }
+
+  return ok;
 }

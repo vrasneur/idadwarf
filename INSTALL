@@ -19,7 +19,7 @@ For further help, see:
 
 There are 2 possible ways to build IDADWARF: with or without building its dependencies.
 
-It will build with the IDA SDK, preferably version 5.5 (but anterior 5.x versions should work)
+It will build with the IDA SDK, version 5.5 only.
 
 I) With source dependencies:
 

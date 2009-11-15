@@ -1,10 +1,8 @@
 * get rid of libelf: use the ELF loader from IDA
-* add ellipsis argument (...) support in function prototypes (only supported in function pointer types for now)
 * add bitfield support
 * add C++ support
 * when C++ support is done, draw UML diagrams of the program object hierarchy via the graph API
 * memory debugging, there may be plenty of memleaks...
 * add amd64 (and sparc?) support
-* use argloc_t in function prototypes
 * give the interesting infos from the debugging symbols to the Hex-Rays decompiler (how to do that?)
 * static analysis stuff (see the Muchnick book :)

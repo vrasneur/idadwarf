@@ -1,3 +1,9 @@
+IDADWARF 0.2 (16 Nov 2009)
+
+	* argloc_t support in function prototypes (register and stack parameters).
+	* ellipsis (...) support in function prototypes.
+	* handle x86 ABI edge case : struct/union as return values (test file added).
+
 IDADWARF 0.1.1 (13 Nov 2009)
 
 	* calling convention fix in EnumCmp::visit_const (thanks to Igor Skochinsky).

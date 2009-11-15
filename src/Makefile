@@ -1,9 +1,9 @@
 # mingw C++ (cross-)compiler
-CC := i586-mingw32msvc-g++
+CC := i386-mingw32-g++
 # ranlib
-RANLIB := i586-mingw32msvc-ranlib
+RANLIB := i386-mingw32-ranlib
 # autoconf
-AUTOCONF := autoconf2.50
+AUTOCONF := autoconf
 # libelf source path
 ELFDIR := /home/vincent/prog/idadwarf/archives/libelf-0.8.13
 # libdwarf source path
@@ -14,7 +14,7 @@ IDAINC := /home/vincent/sources/idasdk55/include
 # ... why ida.a and not libida.a?
 IDALIB := /home/vincent/sources/idasdk55/libgcc.w32/ida.a
 # IDA path
-IDADIR := /home/vincent/.wine/drive_c/Program\ Files/IDA
+IDADIR := /home/vincent/.wine/drive_c/Program\ Files/IDA55
 # libelf and libdwarf prefix paths
 # you can keep the default value
 DEPSDIR := deps

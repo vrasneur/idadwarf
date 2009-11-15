@@ -5,8 +5,6 @@
 #include "ida_utils.hpp"
 #include "iterators.hpp"
 
-#define USE_DANGEROUS_FUNCTIONS
-
 extern DieCache diecache;
 
 EnumCmp::EnumCmp(enum_t enum_id) throw()

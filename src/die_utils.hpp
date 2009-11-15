@@ -9,6 +9,7 @@
 // IDA headers
 #include <ida.hpp>
 #include <area.hpp>
+#include <typeinf.hpp>
 
 // additional libs headers
 #include <dwarf.h>
@@ -69,7 +70,8 @@ private:
 class DieHolder;
 
 typedef void (*var_visitor_fun)(DieHolder &, Dwarf_Locdesc const *,
-                                func_t *, ea_t const, OffsetAreas const &);
+                                func_t *, ea_t const, OffsetAreas const &,
+                                func_type_info_t *);
 
 int get_small_encoding_value(Dwarf_Attribute attrib, Dwarf_Signed *val, Dwarf_Error *err);
 
@@ -180,7 +182,8 @@ public:
   }
 
   void retrieve_var(func_t *funptr, ea_t const cu_low_pc,
-                    OffsetAreas const &offset_areas, var_visitor_fun visit);
+                    OffsetAreas const &offset_areas, func_type_info_t *info,
+                    var_visitor_fun visit);
 
   Dwarf_Signed get_attr_small_val(int attr);
 

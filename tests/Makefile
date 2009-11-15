@@ -1,7 +1,7 @@
 DBGFLAGS := -O0 -ggdb3
 CFLAGS := -m32 $(DBGFLAGS)
 
-BIN := testfpo testnotfpo teststripdbg test2
+BIN := testfpo testnotfpo teststripdbg test2 testretstruc
 
 .PHONY: clean
 
@@ -24,6 +24,10 @@ teststripdbg: testnotfpo
 # normal, with enums and structs
 test2: test2.c
 	gcc $(CFLAGS) $^ -o $@
+
+# function that returns a struct
+testretstruc: testretstruc.c
+	gcc -std=gnu99 $(CFLAGS) $^ -o $@
 
 clean:
 	-rm -f $(BIN) *.dbg

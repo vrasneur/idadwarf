@@ -45,8 +45,6 @@ bool set_simple_die_type(char const *name, qtype const &ida_type, uint32 *ordina
 
 flags_t fill_typeinfo(typeinfo_t *mt, uint32 const ordinal, type_t const **type);
 
-bool replace_func_return(qtype &new_type, qtype const &return_type, type_t const *func_type);
-
 bool apply_type_ordinal(ea_t const addr, uint32 const ordinal);
 
 uint32 get_typedef_ordinal(type_t const *typedef_type);
@@ -58,5 +56,7 @@ uint32 resolve_typedef_ordinal(type_t const *typedef_type);
 uint32 resolve_typedef_ordinal(uint32 const typedef_ordinal);
 
 char const *resolve_typedef_name(type_t const *typedef_type);
+
+bool is_type_struni_rec(type_t const *type);
 
 #endif // IDADWARF_IDA_UTILS_HPP
